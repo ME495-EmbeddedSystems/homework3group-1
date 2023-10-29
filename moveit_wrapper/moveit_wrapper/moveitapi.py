@@ -12,7 +12,7 @@ class MoveItApi():
     Wraps the moveit ROS API for easy of use
     """
 
-    def __init__(self, node: Node, world_frame: str, base_frame: str):
+    def __init__(self, node: Node, base_frame: str, end_effector_frame: str):
         self.node = node
         self.move_group_action_client = ActionClient(
             self.node,
@@ -24,8 +24,8 @@ class MoveItApi():
         self.joint_state = JointState()
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self.node)
-        self.tf_parent_frame = world_frame
-        self.tf_child_frame = base_frame
+        self.tf_parent_frame = base_frame
+        self.tf_child_frame = end_effector_frame
 
     def get_curent_states(self):
         transform = self.tf_buffer.lookup_transform(self.tf_parent_frame,
