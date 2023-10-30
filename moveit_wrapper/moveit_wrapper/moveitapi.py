@@ -1,5 +1,6 @@
 from rclpy.node import Node
 from rclpy.action import ActionClient
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from moveit_msgs.action import MoveGroup
 from moveit_msgs.msg import (
     RobotState,
@@ -7,8 +8,10 @@ from moveit_msgs.msg import (
     Constraints,
     PositionConstraint,
     OrientationConstraint,
-    RobotTrajectory
+    RobotTrajectory,
+    PositionIKRequest
 )
+from moveit_srvs.srv import GetPositionIK
 from tf2_ros import Buffer
 from tf2_ros.transform_listener import TransformListener
 from sensor_msgs.msg import JointState
@@ -23,13 +26,24 @@ class MoveItApi():
     Wraps the moveit ROS API for easy of use
     """
 
-    def __init__(self, node: Node, base_frame: str, end_effector_frame: str):
+    def __init__(self, node: Node, base_frame: str, end_effector_frame: str, group_name: str, ik_link: str, frame_id: str):
         self.node = node
         self.move_group_action_client = ActionClient(
             self.node,
             MoveGroup,
             'move_action'
         )
+
+        #Creating IK client
+        self.node.cbgroup = MutuallyExclusiveCallbackGroup()
+        self.ik_client = self.create_client(GetPositionIK, "compute_ik",self.node.cbgroup)
+        if not self.ik_client.wait_for_service(timeout_sec=10.0):
+            raise RuntimeError('Timeout waiting for "compute_ik" service to become available')
+        
+        self.groupname = group_name
+        self.ik_link_name = ik_link
+        self.frame_id = frame_id
+        self.js = None #we get the joint state from the JointState subscriber 
 
         # Creating tf Listener
         self.joint_state = JointState()
@@ -90,8 +104,24 @@ class MoveItApi():
                                  ) -> Tuple[RobotState, MoveItErrorCodes]:
         """
         Constructs an IK request and calls the service
+
+        Arguments:
+            - pose (geometry_msgs/Pose) - The pose of the end effector
+
+        Returns
+        -------
+            RobotState of the start position and error_code of the GetPositionIK service
         """
-        pass
+        request = PositionIKRequest()
+        request.group_name = self.groupname
+        request.robot_state = self.current_state_to_robot_state()
+        request.ik_link_name = self.ik_link_name
+        request.pose_stamped.header.stamp = self.get_clock().now().to_msg()
+        request.pose_stamped.header.frame_id = self.frame_id
+        request.pose_stamped.pose = pose
+        request_IK = GetPositionIK.request(ik_request=request)
+        result = await self.ik_client.call_async(request_IK)
+        return (result.solution,result.error_code)
 
     # TODO: Stephen
     def create_goal_constraint(point: Point, orientation: Quaternion) -> Constraints:
