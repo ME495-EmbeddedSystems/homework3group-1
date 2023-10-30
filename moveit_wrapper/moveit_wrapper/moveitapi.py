@@ -75,8 +75,7 @@ class MoveItApi():
         """
         pass
 
-    # TODO: Kyle
-    def get_joint_states(self, pose: Pose) -> JointState:
+    async def get_joint_states(self, pose: Pose) -> JointState:
         """
         Calculates joint states for a given pose
 
@@ -87,8 +86,15 @@ class MoveItApi():
         -------
             The states for each joint to reach that pose
         """
+        # Perform IK request on Pose to get the jointStates
+        results = await self.perform_IK_request(Pose)
 
-        pass
+        # Return of -31 means no IK solution
+        if results[2] == -31:
+            self.node.get_logger.error("No solution found for given start pose")
+            return None
+        else:
+            return RobotState.joint_state
 
     # TODO: jihai
     def joint_state_callback(self, joint_states: JointState):
