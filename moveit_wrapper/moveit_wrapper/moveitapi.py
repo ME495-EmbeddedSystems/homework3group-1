@@ -17,6 +17,7 @@ from tf2_ros.transform_listener import TransformListener
 import rclpy
 from geometry_msgs.msg import Pose, Point, Quaternion
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Header
 from typing import Tuple, Optional
 
 
@@ -48,7 +49,7 @@ class MoveItApi():
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self.node)
         self.tf_parent_frame = base_frame
-        self.tf_child_frame = end_effector_frame
+        self.end_effector_frame = end_effector_frame
 
 
         self.subscription_joint = self.create_subscription(
@@ -128,6 +129,8 @@ class MoveItApi():
         request_IK = GetPositionIK.request(ik_request=request)
         result = await self.ik_client.call_async(request_IK)
         return (result.solution,result.error_code)
+    
+    # TODO: Update constraint weights as a team
 
     # TODO: Stephen
     def create_goal_constraint(point: Point, orientation: Quaternion) -> Constraints:
@@ -137,6 +140,22 @@ class MoveItApi():
     def create_position_constraint(point: Point) -> PositionConstraint:
         pass
 
-    # TODO: Lyle
-    def create_orientation_constraint(orientation: Quaternion) -> OrientationConstraint:
-        pass
+
+    def create_orientation_constraint(self, orientation: Quaternion) -> OrientationConstraint:
+        """
+        Construct a moveit_msgs/OrientationConstraint for the end effector using a given quaternion
+
+        Arguments:
+            orientation (geometry_msgs/Quaternion) -- orienntation constraint of the end effector
+
+        Returns:
+            OrientationConstraint message type
+        """
+        header = Header(frame_id = self.end_effector_frame,
+                        stamp = self.get_clock().now().to_msg())
+        link_name = self.ik_link_name
+        
+        return OrientationConstraint(header = header,
+                                     link_name = link_name,
+                                     orientation = orientation,
+                                     weight = 1.0)
