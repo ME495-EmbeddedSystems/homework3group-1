@@ -14,7 +14,6 @@ from moveit_msgs.msg import (
 from moveit_srvs.srv import GetPositionIK
 from tf2_ros import Buffer
 from tf2_ros.transform_listener import TransformListener
-from sensor_msgs.msg import JointState
 import rclpy
 from geometry_msgs.msg import Pose, Point, Quaternion
 from sensor_msgs.msg import JointState
@@ -43,8 +42,7 @@ class MoveItApi():
         self.groupname = group_name
         self.ik_link_name = ik_link
         self.frame_id = frame_id
-        self.js = None #we get the joint state from the JointState subscriber 
-
+        
         # Creating tf Listener
         self.joint_state = JointState()
         self.tf_buffer = Buffer()
@@ -52,6 +50,11 @@ class MoveItApi():
         self.tf_parent_frame = base_frame
         self.tf_child_frame = end_effector_frame
 
+
+        self.subscription_joint = self.create_subscription(
+            JointState, "joint_states", self.joint_states_callback, 10
+        )
+        
     async def plan_path(self,
                         point: Point = None,
                         orientation: Quaternion = None,
@@ -83,6 +86,7 @@ class MoveItApi():
         -------
             The states for each joint to reach that pose
         """
+
         pass
 
     # TODO: jihai
@@ -90,14 +94,16 @@ class MoveItApi():
         """
         Joint State subscriber callback
         """
-        pass
+        self.joint_state = joint_states
 
     # TODO: jihai
     def current_state_to_robot_state(self) -> RobotState:
         """
         Constructs a robot state object from the internal joint states
         """
-        pass
+        robot_state = RobotState()
+        robot_state.joint_state = self.joint_state
+        return robot_state
 
     # TODO: Anuj
     async def perform_IK_request(self, pose: Pose
