@@ -32,6 +32,8 @@ class MoveItApi():
 
     def __init__(self, node: Node, base_frame: str, end_effector_frame: str, group_name: str, ik_link: str, frame_id: str):
         self.node = node
+
+        # Create MoveGroup.action client
         self.move_group_action_client = ActionClient(
             self.node,
             MoveGroup,
@@ -42,6 +44,14 @@ class MoveItApi():
         self.cbgroup = MutuallyExclusiveCallbackGroup()
         self.ik_client = self.node.create_client(
             GetPositionIK, "compute_ik", callback_group=self.cbgroup)
+        
+        # Create ExecuteTrajectory.action client
+        self.execute_trajectory_action_client = ActionClient(
+            self.node,
+            RobotTrajectory,
+            'execute_action'
+        )
+
         if not self.ik_client.wait_for_service(timeout_sec=10.0):
             raise RuntimeError(
                 'Timeout waiting for "compute_ik" service to become available')
@@ -74,11 +84,13 @@ class MoveItApi():
         pass
 
     # TODO: Stephen
-    def execute_trajectory(trajectory: RobotTrajectory):
+    def execute_trajectory(self, trajectory: RobotTrajectory):
         """
         Executes the trajectory
         """
-        pass
+        self.execute_trajectory_action_client.wait_for_server()
+
+        return self.execute_trajectory_action_client.send_goal_async(trajectory)
 
     async def get_joint_states(self, pose: Pose) -> Optional[JointState]:
         """
@@ -145,8 +157,18 @@ class MoveItApi():
     # TODO: Update constraint weights as a team
 
     # TODO: Stephen
-    def create_goal_constraint(point: Point, orientation: Quaternion) -> Constraints:
-        pass
+    def create_goal_constraint(self, point: Point, orientation: Quaternion) -> Constraints:
+        """
+        Construct a moveit_msgs/Constraint for the end effector using a given quaternion and point
+
+        Arguments:
+            point (geometry_msgs/Point) -- position goal constraint of the end effector
+            orientation (geometry_msgs/Quaternion) -- orienntation goal constraint of the end effector
+
+        Returns:
+            Constraints message type
+        """
+        for joint in 
 
     # TODO: Carter
     def create_position_constraint(self, point: Point) -> PositionConstraint:
