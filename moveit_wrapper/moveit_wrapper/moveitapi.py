@@ -9,15 +9,19 @@ from moveit_msgs.msg import (
     PositionConstraint,
     OrientationConstraint,
     RobotTrajectory,
-    PositionIKRequest
+    PositionIKRequest,
+    BoundingVolume,
 )
-from moveit_srvs.srv import GetPositionIK
+from moveit_msgs.msg._position_constraint import PositionConstraint
+
+from moveit_msgs.srv import GetPositionIK
 from tf2_ros import Buffer
 from tf2_ros.transform_listener import TransformListener
 import rclpy
 from geometry_msgs.msg import Pose, Point, Quaternion
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Header
+from shape_msgs.msg import SolidPrimitive
 from typing import Tuple, Optional
 
 
@@ -34,16 +38,18 @@ class MoveItApi():
             'move_action'
         )
 
-        #Creating IK client
+        # Creating IK client
         self.node.cbgroup = MutuallyExclusiveCallbackGroup()
-        self.node.ik_client = self.create_client(GetPositionIK, "compute_ik",self.node.cbgroup)
+        self.node.ik_client = self.create_client(
+            GetPositionIK, "compute_ik", self.node.cbgroup)
         if not self.node.ik_client.wait_for_service(timeout_sec=10.0):
-            raise RuntimeError('Timeout waiting for "compute_ik" service to become available')
-        
+            raise RuntimeError(
+                'Timeout waiting for "compute_ik" service to become available')
+
         self.groupname = group_name
         self.ik_link_name = ik_link
         self.frame_id = frame_id
-        
+
         # Creating tf Listener
         self.joint_state = JointState()
         self.tf_buffer = Buffer()
@@ -51,11 +57,10 @@ class MoveItApi():
         self.tf_parent_frame = base_frame
         self.end_effector_frame = end_effector_frame
 
-
         self.subscription_joint = self.create_subscription(
             JointState, "joint_states", self.joint_states_callback, 10
         )
-        
+
     async def plan_path(self,
                         point: Point = None,
                         orientation: Quaternion = None,
@@ -91,7 +96,8 @@ class MoveItApi():
 
         # Return of -31 means no IK solution
         if results[2] == -31:
-            self.node.get_logger.error("No solution found for given start pose")
+            self.node.get_logger.error(
+                "No solution found for given start pose")
             return None
         else:
             return RobotState.joint_state
@@ -134,8 +140,8 @@ class MoveItApi():
         request.pose_stamped.pose = pose
         request_IK = GetPositionIK.request(ik_request=request)
         result = await self.node.ik_client.call_async(request_IK)
-        return (result.solution,result.error_code)
-    
+        return (result.solution, result.error_code)
+
     # TODO: Update constraint weights as a team
 
     # TODO: Stephen
@@ -143,9 +149,45 @@ class MoveItApi():
         pass
 
     # TODO: Carter
-    def create_position_constraint(point: Point) -> PositionConstraint:
-        pass
+    def create_position_constraint(self, point: Point) -> PositionConstraint:
+        """
+        Creates a position constraint for the end effector.
 
+        Arguments:
+            + point (geometry_msgs/Point) - The point to constrain the end effector to.
+
+        Returns
+        -------
+            A PositionConstraint for the end effector.
+        """
+
+        # create sphere primitive representing goal pose region
+        primitive = SolidPrimitive(
+            type=SolidPrimitive.SPHERE,
+            dimensions=[0.05]
+        )
+
+        # create bounding volume
+        volume = BoundingVolume(
+            primitives=[primitive],
+            primitive_poses=[
+                Pose(
+                    position=point
+                )
+            ]
+        )
+
+        # create position constraint
+        position_constraint = PositionConstraint(
+            header=Header(
+                frame_id=self.frame_id,
+                stamp=self.get_clock().now().to_msg()
+            ),
+            link_name=self.ik_link_name,
+            constrait_region=volume
+        )
+
+        return position_constraint
 
     def create_orientation_constraint(self, orientation: Quaternion) -> OrientationConstraint:
         """
@@ -157,11 +199,11 @@ class MoveItApi():
         Returns:
             OrientationConstraint message type
         """
-        header = Header(frame_id = self.end_effector_frame,
-                        stamp = self.get_clock().now().to_msg())
+        header = Header(frame_id=self.end_effector_frame,
+                        stamp=self.get_clock().now().to_msg())
         link_name = self.ik_link_name
-        
-        return OrientationConstraint(header = header,
-                                     link_name = link_name,
-                                     orientation = orientation,
-                                     weight = 1.0)
+
+        return OrientationConstraint(header=header,
+                                     link_name=link_name,
+                                     orientation=orientation,
+                                     weight=1.0)
