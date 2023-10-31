@@ -1,7 +1,7 @@
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
-from moveit_msgs.action import MoveGroup
+from moveit_msgs.action import MoveGroup, ExecuteTrajectory
 from moveit_msgs.msg import (
     RobotState,
     MoveItErrorCodes,
@@ -11,6 +11,8 @@ from moveit_msgs.msg import (
     RobotTrajectory,
     PositionIKRequest,
     BoundingVolume,
+    MotionPlanRequest,
+    PlanningOptions
 )
 from moveit_msgs.msg._position_constraint import PositionConstraint
 
@@ -23,6 +25,24 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Header
 from shape_msgs.msg import SolidPrimitive
 from typing import Tuple, Optional
+from enum import Enum
+
+
+class ErrorCodes(Enum):
+    NO_ERROR = 0,
+    IK_FAIL = 1,
+    GOAL_NOT_SPECIFIED = 2,
+
+
+class PlanResult:
+    def __init__(self,
+                 error_code,
+                 trajectory,
+                 moveiterror=None
+                 ):
+        self.error_code = error_code
+        self.trajectory = trajectory
+        self.moveiterror = moveiterror
 
 
 class MoveItApi():
@@ -30,7 +50,15 @@ class MoveItApi():
     Wraps the moveit ROS API for easy of use
     """
 
-    def __init__(self, node: Node, base_frame: str, end_effector_frame: str, group_name: str, ik_link: str, frame_id: str):
+    def __init__(self, node: Node, base_frame: str, end_effector_frame: str, group_name: str, ik_link: str):
+        """
+        Arguments:
+            + node (rclpy.node.Node) - the running node used to interface with ROS
+            + base_frame (str) - the fixed body frame of the robot
+            + end_effector_frame (str) - the frame of the end effector
+            + group_name (str) - the name of the planning group to use
+            + ik_link (str) - the name of the link
+        """
         self.node = node
 
         # Create MoveGroup.action client
@@ -44,13 +72,15 @@ class MoveItApi():
         self.cbgroup = MutuallyExclusiveCallbackGroup()
         self.ik_client = self.node.create_client(
             GetPositionIK, "compute_ik", callback_group=self.cbgroup)
-        
+
         # Create ExecuteTrajectory.action client
         self.execute_trajectory_action_client = ActionClient(
             self.node,
-            RobotTrajectory,
-            'execute_action'
+            ExecuteTrajectory,
+            'execute_trajectory'
         )
+
+        self.node.get_logger().warn("trajectory client")
 
         if not self.ik_client.wait_for_service(timeout_sec=10.0):
             raise RuntimeError(
@@ -58,13 +88,12 @@ class MoveItApi():
 
         self.groupname = group_name
         self.ik_link_name = ik_link
-        self.frame_id = frame_id
+        self.base_frame = base_frame
 
         # Creating tf Listener
         self.joint_state = JointState()
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self.node)
-        self.tf_parent_frame = base_frame
         self.end_effector_frame = end_effector_frame
 
         self.subscription_joint = self.node.create_subscription(
@@ -72,16 +101,55 @@ class MoveItApi():
         )
 
     async def plan_path(self,
+                        max_velocity_scaling_factor=0.1,
+                        max_acceleration_scaling_factor=0.1,
                         point: Point = None,
                         orientation: Quaternion = None,
                         start_pose: Pose = None,
-                        execute: bool = False) -> RobotTrajectory:
+                        execute: bool = False) -> PlanResult:
         """
         Plans a path to a point and orientation
 
         Implements 1,2,3
         """
-        pass
+
+        # define goal constraints
+        goal_constraint = self.create_goal_constraint(point, orientation)
+
+        motion_plan_request = MotionPlanRequest(
+            goal_constraints=[goal_constraint],
+            group_name=self.groupname,
+            allowed_planning_time=10.0,
+            max_velocity_scaling_factor=max_velocity_scaling_factor,
+            max_acceleration_scaling_factor=max_acceleration_scaling_factor
+        )
+
+        if start_pose is not None:
+            # if a pose other than the current is defined, set robot state
+            robot_state, error_code = await self.perform_IK_request(start_pose)
+
+            if error_code != 1:
+                return PlanResult(ErrorCodes.IK_FAIL, None, error_code)
+
+            motion_plan_request.start_state = robot_state
+
+        if point is None and orientation is None:
+            # you have to specify at least one throw error
+            return PlanResult(ErrorCodes.GOAL_NOT_SPECIFIED, None)
+
+        goal = MoveGroup.Goal(
+            request=motion_plan_request,
+            planning_options=PlanningOptions(
+                plan_only=(not execute)
+            ),
+        )
+
+        result: MoveGroup.Result = await self.move_group_action_client.send_goal_async(goal)
+
+        if execute:
+            return PlanResult(ErrorCodes.NO_ERROR, result.executed_trajectory)
+        else:
+            return PlanResult(ErrorCodes.NO_ERROR, result.planned_trajectory)
 
     # TODO: Stephen
     def execute_trajectory(self, trajectory: RobotTrajectory):
@@ -90,7 +158,8 @@ class MoveItApi():
         """
         self.execute_trajectory_action_client.wait_for_server()
 
-        return self.execute_trajectory_action_client.send_goal_async(trajectory)
+        return self.execute_trajectory_action_client.send_goal_async(
+            ExecuteTrajectory.Goal(trajectory=trajectory))
 
     async def get_joint_states(self, pose: Pose) -> Optional[JointState]:
         """
@@ -148,7 +217,7 @@ class MoveItApi():
         request.robot_state = self.current_state_to_robot_state()
         request.ik_link_name = self.ik_link_name
         request.pose_stamped.header.stamp = self.node.get_clock().now().to_msg()
-        request.pose_stamped.header.frame_id = self.frame_id
+        request.pose_stamped.header.frame_id = self.base_frame
         request.pose_stamped.pose = pose
         request_IK = GetPositionIK.Request(ik_request=request)
         result = await self.ik_client.call_async(request_IK)
@@ -168,13 +237,18 @@ class MoveItApi():
         Returns:
             Constraints message type
         """
-        posConstraint = self.create_position_constraint(point)
-        orConstraint = self.create_orientation_constraint(orientation)
 
-        return Constraints(position_constraints=[posConstraint],
-                           orientation_constraints=[orConstraint]
+        position_constraints = []
+        if point is not None:
+            position_constraints = [self.create_position_constraint(point)]
+
+        orConstraints = []
+        if orientation is not None:
+            orConstraints = [self.create_orientation_constraint(orientation)]
+
+        return Constraints(position_constraints=position_constraints,
+                           orientation_constraints=orConstraints,
                            )
->>>>>>> b80225f (Added create goal constraint function)
 
     # TODO: Carter
     def create_position_constraint(self, point: Point) -> PositionConstraint:
@@ -208,7 +282,7 @@ class MoveItApi():
         # create position constraint
         position_constraint = PositionConstraint(
             header=Header(
-                frame_id=self.frame_id,
+                frame_id=self.base_frame,
                 stamp=self.node.get_clock().now().to_msg()
             ),
             link_name=self.ik_link_name,
