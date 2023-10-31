@@ -39,10 +39,10 @@ class MoveItApi():
         )
 
         # Creating IK client
-        self.node.cbgroup = MutuallyExclusiveCallbackGroup()
-        self.node.ik_client = self.create_client(
-            GetPositionIK, "compute_ik", self.node.cbgroup)
-        if not self.node.ik_client.wait_for_service(timeout_sec=10.0):
+        self.cbgroup = MutuallyExclusiveCallbackGroup()
+        self.ik_client = self.node.create_client(
+            GetPositionIK, "compute_ik", callback_group=self.cbgroup)
+        if not self.ik_client.wait_for_service(timeout_sec=10.0):
             raise RuntimeError(
                 'Timeout waiting for "compute_ik" service to become available')
 
@@ -57,8 +57,8 @@ class MoveItApi():
         self.tf_parent_frame = base_frame
         self.end_effector_frame = end_effector_frame
 
-        self.subscription_joint = self.create_subscription(
-            JointState, "joint_states", self.joint_states_callback, 10
+        self.subscription_joint = self.node.create_subscription(
+            JointState, "joint_states", self.joint_state_callback, 10
         )
 
     async def plan_path(self,
@@ -80,7 +80,7 @@ class MoveItApi():
         """
         pass
 
-    async def get_joint_states(self, pose: Pose) -> JointState:
+    async def get_joint_states(self, pose: Pose) -> Optional[JointState]:
         """
         Calculates joint states for a given pose
 
@@ -92,15 +92,15 @@ class MoveItApi():
             The states for each joint to reach that pose
         """
         # Perform IK request on Pose to get the jointStates
-        results = await self.perform_IK_request(Pose)
+        results = await self.perform_IK_request(pose)
 
         # Return of -31 means no IK solution
-        if results[2] == -31:
+        if results[1].val == -31:
             self.node.get_logger.error(
                 "No solution found for given start pose")
             return None
         else:
-            return RobotState.joint_state
+            return results[0].joint_state
 
     # TODO: jihai
     def joint_state_callback(self, joint_states: JointState):
@@ -135,11 +135,11 @@ class MoveItApi():
         request.group_name = self.groupname
         request.robot_state = self.current_state_to_robot_state()
         request.ik_link_name = self.ik_link_name
-        request.pose_stamped.header.stamp = self.get_clock().now().to_msg()
+        request.pose_stamped.header.stamp = self.node.get_clock().now().to_msg()
         request.pose_stamped.header.frame_id = self.frame_id
         request.pose_stamped.pose = pose
-        request_IK = GetPositionIK.request(ik_request=request)
-        result = await self.node.ik_client.call_async(request_IK)
+        request_IK = GetPositionIK.Request(ik_request=request)
+        result = await self.ik_client.call_async(request_IK)
         return (result.solution, result.error_code)
 
     # TODO: Update constraint weights as a team
@@ -181,7 +181,7 @@ class MoveItApi():
         position_constraint = PositionConstraint(
             header=Header(
                 frame_id=self.frame_id,
-                stamp=self.get_clock().now().to_msg()
+                stamp=self.node.get_clock().now().to_msg()
             ),
             link_name=self.ik_link_name,
             constrait_region=volume
@@ -200,7 +200,7 @@ class MoveItApi():
             OrientationConstraint message type
         """
         header = Header(frame_id=self.end_effector_frame,
-                        stamp=self.get_clock().now().to_msg())
+                        stamp=self.node.get_clock().now().to_msg())
         link_name = self.ik_link_name
 
         return OrientationConstraint(header=header,
