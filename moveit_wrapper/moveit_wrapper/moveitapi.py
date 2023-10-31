@@ -36,8 +36,8 @@ class MoveItApi():
 
         #Creating IK client
         self.node.cbgroup = MutuallyExclusiveCallbackGroup()
-        self.ik_client = self.create_client(GetPositionIK, "compute_ik",self.node.cbgroup)
-        if not self.ik_client.wait_for_service(timeout_sec=10.0):
+        self.node.ik_client = self.create_client(GetPositionIK, "compute_ik",self.node.cbgroup)
+        if not self.node.ik_client.wait_for_service(timeout_sec=10.0):
             raise RuntimeError('Timeout waiting for "compute_ik" service to become available')
         
         self.groupname = group_name
@@ -133,7 +133,7 @@ class MoveItApi():
         request.pose_stamped.header.frame_id = self.frame_id
         request.pose_stamped.pose = pose
         request_IK = GetPositionIK.request(ik_request=request)
-        result = await self.ik_client.call_async(request_IK)
+        result = await self.node.ik_client.call_async(request_IK)
         return (result.solution,result.error_code)
     
     # TODO: Update constraint weights as a team
