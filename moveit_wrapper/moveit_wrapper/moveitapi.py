@@ -168,7 +168,13 @@ class MoveItApi():
         Returns:
             Constraints message type
         """
-        for joint in 
+        posConstraint = self.create_position_constraint(point)
+        orConstraint = self.create_orientation_constraint(orientation)
+
+        return Constraints(position_constraints=[posConstraint],
+                           orientation_constraints=[orConstraint]
+                           )
+>>>>>>> b80225f (Added create goal constraint function)
 
     # TODO: Carter
     def create_position_constraint(self, point: Point) -> PositionConstraint:
