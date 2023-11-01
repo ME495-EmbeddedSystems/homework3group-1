@@ -12,15 +12,17 @@ from moveit_msgs.msg import (
     PositionIKRequest,
     BoundingVolume,
     MotionPlanRequest,
-    PlanningOptions
+    PlanningOptions,
+    WorkspaceParameters,
+    PositionConstraint
 )
-from moveit_msgs.msg._position_constraint import PositionConstraint
+
 
 from moveit_msgs.srv import GetPositionIK
 from tf2_ros import Buffer
 from tf2_ros.transform_listener import TransformListener
 import rclpy
-from geometry_msgs.msg import Pose, Point, Quaternion
+from geometry_msgs.msg import Pose, Point, Quaternion, Vector3
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Header
 from shape_msgs.msg import SolidPrimitive
@@ -97,7 +99,7 @@ class MoveItApi():
         self.end_effector_frame = end_effector_frame
 
         self.subscription_joint = self.node.create_subscription(
-            JointState, "joint_states", self.joint_state_callback, 10
+            JointState, "px100/joint_states", self.joint_state_callback, 10
         )
 
     async def plan_path(self,
@@ -117,11 +119,20 @@ class MoveItApi():
         goal_constraint = self.create_goal_constraint(point, orientation)
 
         motion_plan_request = MotionPlanRequest(
+            workspace_parameters=WorkspaceParameters(
+                header=Header(
+                    stamp=self.node.get_clock().now().to_msg(),
+                    frame_id=self.base_frame
+                ),
+                min_corner=Vector3(x=-1.0, y=-1.0, z=-1.0),
+                max_corner=Vector3(x=1.0, y=1.0, z=1.0)
+            ),
             goal_constraints=[goal_constraint],
             group_name=self.groupname,
             allowed_planning_time=10.0,
+            num_planning_attempts=10,
             max_velocity_scaling_factor=max_velocity_scaling_factor,
-            max_acceleration_scaling_factor=max_acceleration_scaling_factor
+            max_acceleration_scaling_factor=max_acceleration_scaling_factor,
         )
 
         if start_pose is not None:
@@ -197,6 +208,7 @@ class MoveItApi():
         """
         robot_state = RobotState()
         robot_state.joint_state = self.joint_state
+        self.node.get_logger().warn(f"{robot_state.joint_state}")
         return robot_state
 
     # TODO: Anuj
@@ -224,6 +236,10 @@ class MoveItApi():
         return (result.solution, result.error_code)
 
     # TODO: Update constraint weights as a team
+
+    def create_joint_constraint(self, point: Point, orientation: Quaternion) -> Constraints:
+
+        pass
 
     # TODO: Stephen
     def create_goal_constraint(self, point: Point, orientation: Quaternion) -> Constraints:
@@ -264,9 +280,11 @@ class MoveItApi():
         """
 
         # create sphere primitive representing goal pose region
+        dimensions = [0]
+        dimensions[SolidPrimitive.SPHERE_RADIUS] = 0.01
         primitive = SolidPrimitive(
             type=SolidPrimitive.SPHERE,
-            dimensions=[0.05]
+            dimensions=dimensions
         )
 
         # create bounding volume
@@ -274,21 +292,34 @@ class MoveItApi():
             primitives=[primitive],
             primitive_poses=[
                 Pose(
-                    position=point
-                )
+                    position=point,
+                    orientation=Quaternion(
+                        x=0.0,
+                        y=0.0,
+                        z=0.0,
+                        w=1.0
+                    )
+                ),
             ]
         )
+
+        self.node.get_logger().warn(f"position link name {self.ik_link_name}")
 
         # create position constraint
         position_constraint = PositionConstraint(
             header=Header(
-                frame_id=self.base_frame,
+                frame_id="world",
                 stamp=self.node.get_clock().now().to_msg()
             ),
             link_name=self.ik_link_name,
-            constrait_region=volume
+            constrait_region=volume,
+            target_point_offset=Vector3(
+                x=0.0,
+                y=0.0,
+                z=0.0
+            ),
+            weight=1.0
         )
-
         return position_constraint
 
     def create_orientation_constraint(self, orientation: Quaternion) -> OrientationConstraint:
@@ -301,11 +332,15 @@ class MoveItApi():
         Returns:
             OrientationConstraint message type
         """
-        header = Header(frame_id=self.end_effector_frame,
+        header = Header(frame_id=self.base_frame,
                         stamp=self.node.get_clock().now().to_msg())
         link_name = self.ik_link_name
 
         return OrientationConstraint(header=header,
                                      link_name=link_name,
                                      orientation=orientation,
-                                     weight=1.0)
+                                     weight=1.0,
+                                     parameterization=OrientationConstraint.XYZ_EULER_ANGLES,
+                                     absolute_x_axis_tolerance=1.0,
+                                     absolute_y_axis_tolerance=1.0,
+                                     absolute_z_axis_tolerance=1.0)
