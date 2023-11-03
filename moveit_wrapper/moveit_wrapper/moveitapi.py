@@ -121,7 +121,7 @@ class MoveItApi():
 
         self.fut = Future()
 
-        rclpy.get_global_executor().create_task(self.plan_path(
+        rclpy.get_global_executor().create_task(self.plan_async(
             max_velocity_scaling_factor,
             max_acceleration_scaling_factor,
             point,
@@ -136,14 +136,14 @@ class MoveItApi():
     def done(self, plan_result):
         self.fut.set_result(plan_result)
 
-    async def plan_path(self,
-                        max_velocity_scaling_factor=0.1,
-                        max_acceleration_scaling_factor=0.1,
-                        point: Point = None,
-                        orientation: Quaternion = None,
-                        start_pose: Pose = None,
-                        execute: bool = False,
-                        use_jc: bool = True) -> PlanResult:
+    async def plan_async(self,
+                         max_velocity_scaling_factor=0.1,
+                         max_acceleration_scaling_factor=0.1,
+                         point: Point = None,
+                         orientation: Quaternion = None,
+                         start_pose: Pose = None,
+                         execute: bool = False,
+                         use_jc: bool = True) -> PlanResult:
         """
         Plans a path to a point and orientation
 
