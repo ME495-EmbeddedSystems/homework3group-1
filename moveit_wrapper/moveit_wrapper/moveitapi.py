@@ -36,6 +36,8 @@ from shape_msgs.msg import SolidPrimitive
 from typing import Tuple, Optional
 from enum import Enum
 from rclpy.task import Future
+from rclpy import task
+import asyncio
 
 
 class ErrorCodes(Enum):
@@ -108,6 +110,32 @@ class MoveItApi():
             JointState, "px100/joint_states", self.joint_state_callback, 10
         )
 
+    def plan(self,
+             max_velocity_scaling_factor=0.1,
+             max_acceleration_scaling_factor=0.1,
+             point: Point = None,
+             orientation: Quaternion = None,
+             start_pose: Pose = None,
+             execute: bool = False,
+             use_jc: bool = True):
+
+        self.fut = Future()
+
+        rclpy.get_global_executor().create_task(self.plan_path(
+            max_velocity_scaling_factor,
+            max_acceleration_scaling_factor,
+            point,
+            orientation,
+            start_pose,
+            execute,
+            use_jc
+        )).add_done_callback(self.done)
+
+        return self.fut
+
+    def done(self, plan_result):
+        self.fut.set_result(plan_result)
+
     async def plan_path(self,
                         max_velocity_scaling_factor=0.1,
                         max_acceleration_scaling_factor=0.1,
@@ -121,8 +149,6 @@ class MoveItApi():
 
         Implements 1,2,3
         """
-
-        # future = Future()
 
         # define goal constraints
         goal_constraint = await self.create_goal_constraint(
@@ -165,8 +191,9 @@ class MoveItApi():
             ),
         )
 
-        result: MoveGroup.Result = await self.move_group_action_client.send_goal_async(goal)
-
+        goal_handle = await self.move_group_action_client.send_goal_async(goal)
+        result_response = await goal_handle.get_result_async()
+        result = result_response.result
         if execute:
             return PlanResult(ErrorCodes.NO_ERROR, result.executed_trajectory)
         else:
