@@ -14,20 +14,28 @@ from moveit_msgs.msg import (
     MotionPlanRequest,
     PlanningOptions,
     WorkspaceParameters,
-    PositionConstraint
+    PositionConstraint,
+    JointConstraint
 )
-
 
 from moveit_msgs.srv import GetPositionIK
 from tf2_ros import Buffer
 from tf2_ros.transform_listener import TransformListener
 import rclpy
-from geometry_msgs.msg import Pose, Point, Quaternion, Vector3
+from rclpy.time import Time
+from geometry_msgs.msg import (
+    Pose,
+    PoseStamped,
+    Point,
+    Quaternion,
+    Vector3,
+)
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Header
 from shape_msgs.msg import SolidPrimitive
 from typing import Tuple, Optional
 from enum import Enum
+from rclpy.task import Future
 
 
 class ErrorCodes(Enum):
@@ -52,14 +60,13 @@ class MoveItApi():
     Wraps the moveit ROS API for easy of use
     """
 
-    def __init__(self, node: Node, base_frame: str, end_effector_frame: str, group_name: str, ik_link: str):
+    def __init__(self, node: Node, base_frame: str, end_effector_frame: str, group_name: str):
         """
         Arguments:
             + node (rclpy.node.Node) - the running node used to interface with ROS
             + base_frame (str) - the fixed body frame of the robot
             + end_effector_frame (str) - the frame of the end effector
             + group_name (str) - the name of the planning group to use
-            + ik_link (str) - the name of the link
         """
         self.node = node
 
@@ -89,7 +96,6 @@ class MoveItApi():
                 'Timeout waiting for "compute_ik" service to become available')
 
         self.groupname = group_name
-        self.ik_link_name = ik_link
         self.base_frame = base_frame
 
         # Creating tf Listener
@@ -108,15 +114,19 @@ class MoveItApi():
                         point: Point = None,
                         orientation: Quaternion = None,
                         start_pose: Pose = None,
-                        execute: bool = False) -> PlanResult:
+                        execute: bool = False,
+                        use_jc: bool = True) -> PlanResult:
         """
         Plans a path to a point and orientation
 
         Implements 1,2,3
         """
 
+        # future = Future()
+
         # define goal constraints
-        goal_constraint = self.create_goal_constraint(point, orientation)
+        goal_constraint = await self.create_goal_constraint(
+            point, orientation, use_jc=use_jc)
 
         motion_plan_request = MotionPlanRequest(
             workspace_parameters=WorkspaceParameters(
@@ -188,7 +198,7 @@ class MoveItApi():
 
         # Return of -31 means no IK solution
         if results[1].val == -31:
-            self.node.get_logger.error(
+            self.node.get_logger().error(
                 "No solution found for given start pose")
             return None
         else:
@@ -227,7 +237,7 @@ class MoveItApi():
         request = PositionIKRequest()
         request.group_name = self.groupname
         request.robot_state = self.current_state_to_robot_state()
-        request.ik_link_name = self.ik_link_name
+        request.ik_link_name = self.end_effector_frame
         request.pose_stamped.header.stamp = self.node.get_clock().now().to_msg()
         request.pose_stamped.header.frame_id = self.base_frame
         request.pose_stamped.pose = pose
@@ -235,36 +245,73 @@ class MoveItApi():
         result = await self.ik_client.call_async(request_IK)
         return (result.solution, result.error_code)
 
-    # TODO: Update constraint weights as a team
+    async def create_joint_constraint(self, point: Point, orientation: Quaternion) -> Constraints:
 
-    def create_joint_constraint(self, point: Point, orientation: Quaternion) -> Constraints:
+        # IK for goal position to get robot state
+        pose = Pose()
+        current_pose = await self.get_end_effector_pose()
 
-        pass
+        if point is None:
+            pose.position = current_pose.pose.position
+        else:
+            pose.position = point
+
+        if orientation is None:
+            pose.orientation = current_pose.pose.orientation
+        else:
+            pose.orientation = orientation
+
+        joint_state = await self.get_joint_states(pose)
+        # self.node.get_logger().warn(f"Joint Names: {joint_state.name}")
+        # self.node.get_logger().warn(f"Joint positions: {joint_state.position}")
+
+        # convert robot state to joint constraints
+        joint_constraints = []
+        for i in range(0, len(joint_state.name)):
+
+            joint_constraint = JointConstraint(
+                joint_name=joint_state.name[i],
+                position=joint_state.position[i],
+                tolerance_above=0.1,
+                tolerance_below=0.1
+            )
+            joint_constraints.append(joint_constraint)
+
+        self.node.get_logger().warn(
+            f"{joint_constraints}")
+        return joint_constraints
 
     # TODO: Stephen
-    def create_goal_constraint(self, point: Point, orientation: Quaternion) -> Constraints:
+    async def create_goal_constraint(self, point: Point, orientation: Quaternion, use_jc: bool = True) -> Constraints:
         """
         Construct a moveit_msgs/Constraint for the end effector using a given quaternion and point
 
         Arguments:
             point (geometry_msgs/Point) -- position goal constraint of the end effector
             orientation (geometry_msgs/Quaternion) -- orienntation goal constraint of the end effector
-
+            use_jc (bool) -- use joint constraints instead of position and orientation constraints
         Returns:
             Constraints message type
         """
 
-        position_constraints = []
-        if point is not None:
-            position_constraints = [self.create_position_constraint(point)]
+        if use_jc:
+            return Constraints(
+                joint_constraints=await self.create_joint_constraint(
+                    point, orientation)
+            )
+        else:
+            position_constraints = []
+            if point is not None:
+                position_constraints = [self.create_position_constraint(point)]
 
-        orConstraints = []
-        if orientation is not None:
-            orConstraints = [self.create_orientation_constraint(orientation)]
+            orConstraints = []
+            if orientation is not None:
+                orConstraints = [
+                    self.create_orientation_constraint(orientation)]
 
-        return Constraints(position_constraints=position_constraints,
-                           orientation_constraints=orConstraints,
-                           )
+            return Constraints(position_constraints=position_constraints,
+                               orientation_constraints=orConstraints,
+                               )
 
     # TODO: Carter
     def create_position_constraint(self, point: Point) -> PositionConstraint:
@@ -303,7 +350,8 @@ class MoveItApi():
             ]
         )
 
-        self.node.get_logger().warn(f"position link name {self.ik_link_name}")
+        self.node.get_logger().warn(
+            f"position link name {self.end_effector_frame}")
 
         # create position constraint
         position_constraint = PositionConstraint(
@@ -311,7 +359,7 @@ class MoveItApi():
                 frame_id="world",
                 stamp=self.node.get_clock().now().to_msg()
             ),
-            link_name=self.ik_link_name,
+            link_name=self.end_effector_frame,
             constrait_region=volume,
             target_point_offset=Vector3(
                 x=0.0,
@@ -334,7 +382,7 @@ class MoveItApi():
         """
         header = Header(frame_id=self.base_frame,
                         stamp=self.node.get_clock().now().to_msg())
-        link_name = self.ik_link_name
+        link_name = self.end_effector_frame
 
         return OrientationConstraint(header=header,
                                      link_name=link_name,
@@ -344,3 +392,28 @@ class MoveItApi():
                                      absolute_x_axis_tolerance=1.0,
                                      absolute_y_axis_tolerance=1.0,
                                      absolute_z_axis_tolerance=1.0)
+
+    async def get_end_effector_pose(self) -> PoseStamped:
+        """ Gets the current end effector pose
+
+        Returns:
+        -------
+        A Pose describing the end effector
+        """
+        ee_tf = await self.tf_buffer.lookup_transform_async(
+            self.base_frame, self.end_effector_frame, Time(seconds=0))
+
+        return PoseStamped(
+            header=Header(
+                frame_id=ee_tf.header.frame_id,
+                stamp=ee_tf.header.stamp
+            ),
+            pose=Pose(
+                position=Point(
+                    x=ee_tf.transform.translation.x,
+                    y=ee_tf.transform.translation.y,
+                    z=ee_tf.transform.translation.z,
+                ),
+                orientation=ee_tf.transform.rotation
+            )
+        )
