@@ -64,13 +64,19 @@ class MoveItApi():
     Wraps the moveit ROS API for easy of use
     """
 
-    def __init__(self, node: Node, base_frame: str, end_effector_frame: str, group_name: str):
+    def __init__(self,
+                 node: Node,
+                 base_frame: str,
+                 end_effector_frame: str,
+                 group_name: str,
+                 joint_state_topic: str):
         """
         Arguments:
             + node (rclpy.node.Node) - the running node used to interface with ROS
             + base_frame (str) - the fixed body frame of the robot
             + end_effector_frame (str) - the frame of the end effector
             + group_name (str) - the name of the planning group to use
+            + joint_state_topic (str) - the topic to subscribe to for joint states
         """
         self.node = node
 
@@ -109,7 +115,7 @@ class MoveItApi():
         self.end_effector_frame = end_effector_frame
 
         self.subscription_joint = self.node.create_subscription(
-            JointState, "px100/joint_states", self.joint_state_callback, 10
+            JointState, joint_state_topic, self.joint_state_callback, 10
         )
 
         # planning scene interface
@@ -295,8 +301,6 @@ class MoveItApi():
             pose.orientation = orientation
 
         joint_state = await self.get_joint_states(pose)
-        # self.node.get_logger().warn(f"Joint Names: {joint_state.name}")
-        # self.node.get_logger().warn(f"Joint positions: {joint_state.position}")
 
         # convert robot state to joint constraints
         joint_constraints = []
