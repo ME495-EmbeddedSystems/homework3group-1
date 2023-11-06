@@ -17,7 +17,7 @@ from moveit_msgs.msg import (
     PositionConstraint,
     JointConstraint,
     PlanningScene,
-    CollisionObject
+    CollisionObject,
 )
 
 from moveit_msgs.srv import GetPositionIK
@@ -101,7 +101,7 @@ class MoveItApi():
 
         self.node.get_logger().warn("trajectory client")
 
-        if not self.ik_client.wait_for_service(timeout_sec=10.0):
+        if not self.ik_client.wait_for_service(timeout_sec=20.0):
             raise RuntimeError(
                 'Timeout waiting for "compute_ik" service to become available')
 
@@ -172,9 +172,10 @@ class MoveItApi():
                     stamp=self.node.get_clock().now().to_msg(),
                     frame_id=self.base_frame
                 ),
-                min_corner=Vector3(x=-1.0, y=-1.0, z=-1.0),
+                min_corner=Vector3(x=-1.0, y=-1.0, z=0.0),
                 max_corner=Vector3(x=1.0, y=1.0, z=1.0)
             ),
+            planner_id="move_group",
             goal_constraints=[goal_constraint],
             group_name=self.groupname,
             allowed_planning_time=10.0,
@@ -257,7 +258,8 @@ class MoveItApi():
         """
         robot_state = RobotState()
         robot_state.joint_state = self.joint_state
-        self.node.get_logger().warn(f"{robot_state.joint_state}")
+        self.node.get_logger().warn(
+            f"Getting Current Robot Joints {robot_state.joint_state}")
         return robot_state
 
     # TODO: Anuj
@@ -309,13 +311,13 @@ class MoveItApi():
             joint_constraint = JointConstraint(
                 joint_name=joint_state.name[i],
                 position=joint_state.position[i],
-                tolerance_above=0.1,
-                tolerance_below=0.1
+                tolerance_above=0.01,
+                tolerance_below=0.01
             )
             joint_constraints.append(joint_constraint)
 
         self.node.get_logger().warn(
-            f"{joint_constraints}")
+            f"Creating Joint Constraint {joint_constraints}")
         return joint_constraints
 
     # TODO: Stephen
@@ -364,27 +366,18 @@ class MoveItApi():
         """
 
         # create sphere primitive representing goal pose region
-        dimensions = [0]
-        dimensions[SolidPrimitive.SPHERE_RADIUS] = 0.01
+        dimensions = [0.01]
         primitive = SolidPrimitive(
             type=SolidPrimitive.SPHERE,
             dimensions=dimensions
         )
 
+        pose = Pose(position=point)
+
         # create bounding volume
         volume = BoundingVolume(
             primitives=[primitive],
-            primitive_poses=[
-                Pose(
-                    position=point,
-                    orientation=Quaternion(
-                        x=0.0,
-                        y=0.0,
-                        z=0.0,
-                        w=1.0
-                    )
-                ),
-            ]
+            primitive_poses=[pose]
         )
 
         self.node.get_logger().warn(
@@ -393,16 +386,12 @@ class MoveItApi():
         # create position constraint
         position_constraint = PositionConstraint(
             header=Header(
-                frame_id="world",
+                frame_id=self.base_frame,
                 stamp=self.node.get_clock().now().to_msg()
             ),
+            target_point_offset=Vector3(),
             link_name=self.end_effector_frame,
             constrait_region=volume,
-            target_point_offset=Vector3(
-                x=0.0,
-                y=0.0,
-                z=0.0
-            ),
             weight=1.0
         )
         return position_constraint
@@ -425,10 +414,9 @@ class MoveItApi():
                                      link_name=link_name,
                                      orientation=orientation,
                                      weight=1.0,
-                                     parameterization=OrientationConstraint.XYZ_EULER_ANGLES,
-                                     absolute_x_axis_tolerance=1.0,
-                                     absolute_y_axis_tolerance=1.0,
-                                     absolute_z_axis_tolerance=1.0)
+                                     absolute_x_axis_tolerance=0.01,
+                                     absolute_y_axis_tolerance=0.01,
+                                     absolute_z_axis_tolerance=0.01)
 
     async def get_end_effector_pose(self) -> PoseStamped:
         """ Gets the current end effector pose
@@ -478,11 +466,10 @@ class MoveItApi():
         # create collision object
         collision_object = CollisionObject(
             header=Header(
-                frame_id="world",
+                frame_id=self.base_frame,
                 stamp=self.node.get_clock().now().to_msg()
             ),
             id=name,
-            type=CollisionObject.PRIMITIVE,
             primitive_poses=[pose],
             primitives=[primitive],
             operation=CollisionObject.ADD
@@ -492,7 +479,7 @@ class MoveItApi():
         # make it a difference to just add the box and not change the rest of the scene
         planning_scene = PlanningScene(
             is_diff=True,
-            collision_objects=[collision_object]
         )
+        planning_scene.world.collision_objects.append(collision_object)
 
         self.planning_scene_publisher.publish(planning_scene)
