@@ -15,7 +15,9 @@ from moveit_msgs.msg import (
     PlanningOptions,
     WorkspaceParameters,
     PositionConstraint,
-    JointConstraint
+    JointConstraint,
+    PlanningScene,
+    CollisionObject
 )
 
 from moveit_msgs.srv import GetPositionIK
@@ -109,6 +111,10 @@ class MoveItApi():
         self.subscription_joint = self.node.create_subscription(
             JointState, "px100/joint_states", self.joint_state_callback, 10
         )
+
+        # planning scene interface
+        self.planning_scene_publisher = self.node.create_publisher(
+            PlanningScene, "planning_scene", 10)
 
     def plan(self,
              max_velocity_scaling_factor=0.1,
@@ -444,3 +450,45 @@ class MoveItApi():
                 orientation=ee_tf.transform.rotation
             )
         )
+
+    def spawn_box(self, pose: Pose, size: Vector3, name: str):
+        """Spawns a box in the planning scene
+
+        Arguments:
+            + pose (geometry_ns/Pose) - The pose of the box
+            + size (geometry_ns/Vector3) - The size of the box
+            + name (str) - The name of the box, used as the id of the collision
+                object in the scene
+
+        Returns:
+        -------
+            None
+        """
+
+        # create primitive box
+        primitive = SolidPrimitive(
+            type=SolidPrimitive.BOX,
+            dimensions=[size.x, size.y, size.z]
+        )
+
+        # create collision object
+        collision_object = CollisionObject(
+            header=Header(
+                frame_id="world",
+                stamp=self.node.get_clock().now().to_msg()
+            ),
+            id=name,
+            type=CollisionObject.PRIMITIVE,
+            primitive_poses=[pose],
+            primitives=[primitive],
+            operation=CollisionObject.ADD
+        )
+
+        # add the collision object to the planning scene
+        # make it a difference to just add the box and not change the rest of the scene
+        planning_scene = PlanningScene(
+            is_diff=True,
+            collision_objects=[collision_object]
+        )
+
+        self.planning_scene_publisher.publish(planning_scene)
