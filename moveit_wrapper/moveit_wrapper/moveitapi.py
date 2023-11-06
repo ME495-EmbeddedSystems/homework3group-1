@@ -38,8 +38,6 @@ from shape_msgs.msg import SolidPrimitive
 from typing import Tuple, Optional
 from enum import Enum
 from rclpy.task import Future
-from rclpy import task
-import asyncio
 
 
 class ErrorCodes(Enum):
