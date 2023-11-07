@@ -35,7 +35,7 @@ from geometry_msgs.msg import (
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Header
 from shape_msgs.msg import SolidPrimitive
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 from enum import Enum
 from rclpy.task import Future
 
@@ -142,6 +142,25 @@ class MoveItApi():
         )).add_done_callback(self.done)
 
         return self.fut
+    
+    def plan_joint(self,
+             joint_name: List[str],
+             joint_values: List[float],
+             max_velocity_scaling_factor=0.1,
+             max_acceleration_scaling_factor=0.1,
+             execute: bool = False):
+
+        self.fut = Future()
+
+        rclpy.get_global_executor().create_task(self.plan_joint_async(
+            joint_name,
+            joint_values,
+            max_velocity_scaling_factor,
+            max_acceleration_scaling_factor,
+            execute
+        )).add_done_callback(self.done)
+
+        return self.fut
 
     def done(self, plan_result):
         self.fut.set_result(plan_result)
@@ -194,6 +213,65 @@ class MoveItApi():
         if point is None and orientation is None:
             # you have to specify at least one throw error
             return PlanResult(ErrorCodes.GOAL_NOT_SPECIFIED, None)
+
+        goal = MoveGroup.Goal(
+            request=motion_plan_request,
+            planning_options=PlanningOptions(
+                plan_only=(not execute)
+            ),
+        )
+
+        goal_handle = await self.move_group_action_client.send_goal_async(goal)
+        result_response = await goal_handle.get_result_async()
+        result = result_response.result
+        if execute:
+            return PlanResult(ErrorCodes.NO_ERROR, result.executed_trajectory)
+        else:
+            return PlanResult(ErrorCodes.NO_ERROR, result.planned_trajectory)
+        
+    async def plan_joint_async(self,
+                         joint_name: List[str],
+                         joint_values: List[float],
+                         max_velocity_scaling_factor=0.1,
+                         max_acceleration_scaling_factor=0.1,
+                         execute: bool = False) -> PlanResult:
+        """
+        Plans a path to a point and orientation
+
+        Implements 1,2,3
+        """
+        joint_constraints = []
+        for i in range(0, len(joint_name)):
+            joint_constraint = JointConstraint(
+                joint_name=joint_name[i],
+                position=joint_values[i],
+                tolerance_above=0.01,
+                tolerance_below=0.01
+            )
+            joint_constraints.append(joint_constraint)
+        # define goal constraints
+        goal_constraint = Constraints(
+            joint_constraint=joint_constraints
+        )
+        self.node.get_logger().warn(
+            f"Creating Joint Constraint {joint_constraints}")
+        motion_plan_request = MotionPlanRequest(
+            workspace_parameters=WorkspaceParameters(
+                header=Header(
+                    stamp=self.node.get_clock().now().to_msg(),
+                    frame_id=self.base_frame
+                ),
+                min_corner=Vector3(x=-1.0, y=-1.0, z=0.0),
+                max_corner=Vector3(x=1.0, y=1.0, z=1.0)
+            ),
+            planner_id="move_group",
+            goal_constraints=[goal_constraint],
+            group_name=self.groupname,
+            allowed_planning_time=10.0,
+            num_planning_attempts=10,
+            max_velocity_scaling_factor=max_velocity_scaling_factor,
+            max_acceleration_scaling_factor=max_acceleration_scaling_factor,
+        )
 
         goal = MoveGroup.Goal(
             request=motion_plan_request,
