@@ -245,13 +245,13 @@ class MoveItApi():
             joint_constraint = JointConstraint(
                 joint_name=joint_name[i],
                 position=joint_values[i],
-                tolerance_above=0.01,
-                tolerance_below=0.01
+                tolerance_above=0.1,
+                tolerance_below=0.1
             )
             joint_constraints.append(joint_constraint)
         # define goal constraints
         goal_constraint = Constraints(
-            joint_constraint=joint_constraints
+            joint_constraints=joint_constraints
         )
         self.node.get_logger().warn(
             f"Creating Joint Constraint {joint_constraints}")
@@ -387,8 +387,8 @@ class MoveItApi():
             joint_constraint = JointConstraint(
                 joint_name=joint_state.name[i],
                 position=joint_state.position[i],
-                tolerance_above=0.01,
-                tolerance_below=0.01
+                tolerance_above=0.1,
+                tolerance_below=0.1
             )
             joint_constraints.append(joint_constraint)
 
@@ -490,9 +490,9 @@ class MoveItApi():
                                      link_name=link_name,
                                      orientation=orientation,
                                      weight=1.0,
-                                     absolute_x_axis_tolerance=0.01,
-                                     absolute_y_axis_tolerance=0.01,
-                                     absolute_z_axis_tolerance=0.01)
+                                     absolute_x_axis_tolerance=0.1,
+                                     absolute_y_axis_tolerance=0.1,
+                                     absolute_z_axis_tolerance=0.1)
 
     async def get_end_effector_pose(self) -> PoseStamped:
         """ Gets the current end effector pose
