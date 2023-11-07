@@ -292,6 +292,11 @@ class MoveItApi():
     def execute_trajectory(self, trajectory: RobotTrajectory):
         """
         Executes the trajectory
+
+        Arguments:
+            - trajectory (moveit_msgs.msg/RobotTrajectory) -- trajectory to be exectured
+        Returns:
+            - Trajectory action
         """
         self.execute_trajectory_action_client.wait_for_server()
 
@@ -402,11 +407,11 @@ class MoveItApi():
         Construct a moveit_msgs/Constraint for the end effector using a given quaternion and point
 
         Arguments:
-            point (geometry_msgs/Point) -- position goal constraint of the end effector
-            orientation (geometry_msgs/Quaternion) -- orienntation goal constraint of the end effector
-            use_jc (bool) -- use joint constraints instead of position and orientation constraints
+            - point (geometry_msgs/Point) -- position goal constraint of the end effector
+            - orientation (geometry_msgs/Quaternion) -- orienntation goal constraint of the end effector
+            - use_jc (bool) -- use joint constraints instead of position and orientation constraints
         Returns:
-            Constraints message type
+            - Constraints message type
         """
 
         if use_jc:
