@@ -303,8 +303,8 @@ class MoveItApi():
             joint_constraint = JointConstraint(
                 joint_name=joint_name[i],
                 position=joint_values[i],
-                tolerance_above=0.1,
-                tolerance_below=0.1
+                tolerance_above=0.01,
+                tolerance_below=0.01
             )
             joint_constraints.append(joint_constraint)
         # define goal constraints
