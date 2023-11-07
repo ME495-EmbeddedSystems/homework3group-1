@@ -14,7 +14,6 @@ from moveit_msgs.msg import (
     MotionPlanRequest,
     PlanningOptions,
     WorkspaceParameters,
-    PositionConstraint,
     JointConstraint,
     PlanningScene,
     CollisionObject,
@@ -58,9 +57,7 @@ class PlanResult:
 
 
 class MoveItApi():
-    """
-    Wraps the moveit ROS API for easy of use
-    """
+    """Wraps the moveit ROS API for easy of use."""
 
     def __init__(self,
                  node: Node,
@@ -69,12 +66,20 @@ class MoveItApi():
                  group_name: str,
                  joint_state_topic: str):
         """
+        Initialize a wrapper for moveit.
+
+        Raises
+        ------
+            RuntimeError -- Timeout error on the IK service
+
         Arguments:
-            + node (rclpy.node.Node) - the running node used to interface with ROS
-            + base_frame (str) - the fixed body frame of the robot
-            + end_effector_frame (str) - the frame of the end effector
-            + group_name (str) - the name of the planning group to use
-            + joint_state_topic (str) - the topic to subscribe to for joint states
+        ---------
+            node (rclpy.node.Node) -- the running node used to interface with ROS
+            base_frame (str) -- the fixed body frame of the robot
+            end_effector_frame (str) -- the frame of the end effector
+            group_name (str) -- the name of the planning group to use
+            joint_state_topic (str) -- the topic to subscribe to for joint states
+
         """
         self.node = node
 
@@ -128,7 +133,24 @@ class MoveItApi():
              start_pose: Pose = None,
              execute: bool = False,
              use_jc: bool = True):
+        """
+        Plan a path to a point and orientation.
 
+        Keyword Arguments:
+            max_velocity_scaling_factor (float) -- Velocity Scaling factor (default: {0.1})
+            max_acceleration_scaling_factor (float) -- Acceleration Scaling factor (default: {0.1})
+            point (geometry_msgs/Point)-- Desired end point of the end effector (default: {None})
+            orientation (geometry_msgs/Quaternion) -- Desired orientation of the end
+                                                      effector (default: {None})
+            start_pose (geometry_msgs/Pose) -- Pose to plan from (default: {Current Pose})
+            execute (bool) -- Execute the trajectory (default: {False})
+            use_jc (bool) -- Use joint constraints (default: {True})
+
+        Returns
+        -------
+            A trajectory of the planned path or the executed path
+
+        """
         self.fut = Future()
 
         rclpy.get_global_executor().create_task(self.plan_async(
@@ -142,14 +164,28 @@ class MoveItApi():
         )).add_done_callback(self.done)
 
         return self.fut
-    
-    def plan_joint(self,
-             joint_name: List[str],
-             joint_values: List[float],
-             max_velocity_scaling_factor=0.1,
-             max_acceleration_scaling_factor=0.1,
-             execute: bool = False):
 
+    def plan_joint(self,
+                   joint_name: List[str],
+                   joint_values: List[float],
+                   max_velocity_scaling_factor=0.1,
+                   max_acceleration_scaling_factor=0.1,
+                   execute: bool = False):
+        """
+        Plan a path to a set of joint positions.
+
+        Keyword Arguments:
+            joint_names (List[str]) -- A list of joint names
+            joint_values (List[str]) -- A list of positions to move to
+            max_velocity_scaling_factor (float) -- Velocity Scaling factor (default: {0.1})
+            max_acceleration_scaling_factor (float) -- Acceleration Scaling factor (default: {0.1})
+            execute (bool) -- Execute the trajectory (default: {False})
+
+        Returns
+        -------
+            A trajectory of the planned path or the executed path
+
+        """
         self.fut = Future()
 
         rclpy.get_global_executor().create_task(self.plan_joint_async(
@@ -174,11 +210,23 @@ class MoveItApi():
                          execute: bool = False,
                          use_jc: bool = True) -> PlanResult:
         """
-        Plans a path to a point and orientation
+        Plan a path to a point and orientation.
 
-        Implements 1,2,3
+        Keyword Arguments:
+            max_velocity_scaling_factor (float) -- Velocity Scaling factor (default: {0.1})
+            max_acceleration_scaling_factor (float) -- Acceleration Scaling factor (default: {0.1})
+            point (geometry_msgs/Point)-- Desired end point of the end effector (default: {None})
+            orientation (geometry_msgs/Quaternion) -- Desired orientation of the end
+                                                      effector (default: {None})
+            start_pose (geometry_msgs/Pose) -- Pose to plan from (default: {Current Pose})
+            execute (bool) -- Execute the trajectory (default: {False})
+            use_jc (bool) -- Use joint constraints (default: {True})
+
+        Returns
+        -------
+            A trajectory of the planned path or the executed path
+
         """
-
         # define goal constraints
         goal_constraint = await self.create_goal_constraint(
             point, orientation, use_jc=use_jc)
@@ -228,17 +276,27 @@ class MoveItApi():
             return PlanResult(ErrorCodes.NO_ERROR, result.executed_trajectory)
         else:
             return PlanResult(ErrorCodes.NO_ERROR, result.planned_trajectory)
-        
-    async def plan_joint_async(self,
-                         joint_name: List[str],
-                         joint_values: List[float],
-                         max_velocity_scaling_factor=0.1,
-                         max_acceleration_scaling_factor=0.1,
-                         execute: bool = False) -> PlanResult:
-        """
-        Plans a path to a point and orientation
 
-        Implements 1,2,3
+    async def plan_joint_async(self,
+                               joint_name: List[str],
+                               joint_values: List[float],
+                               max_velocity_scaling_factor=0.1,
+                               max_acceleration_scaling_factor=0.1,
+                               execute: bool = False) -> PlanResult:
+        """
+        Plan a path to a set of joint positions.
+
+        Keyword Arguments:
+            joint_names (List[str]) -- A list of joint names
+            joint_values (List[str]) -- A list of positions to move to
+            max_velocity_scaling_factor (float) -- Velocity Scaling factor (default: {0.1})
+            max_acceleration_scaling_factor (float) -- Acceleration Scaling factor (default: {0.1})
+            execute (bool) -- Execute the trajectory (default: {False})
+
+        Returns
+        -------
+            A trajectory of the planned path or the executed path
+
         """
         joint_constraints = []
         for i in range(0, len(joint_name)):
@@ -288,15 +346,17 @@ class MoveItApi():
         else:
             return PlanResult(ErrorCodes.NO_ERROR, result.planned_trajectory)
 
-    # TODO: Stephen
     def execute_trajectory(self, trajectory: RobotTrajectory):
         """
-        Executes the trajectory
+        Execute the trajectory.
 
         Arguments:
-            - trajectory (moveit_msgs.msg/RobotTrajectory) -- trajectory to be exectured
-        Returns:
-            - Trajectory action
+            trajectory (moveit_msgs.msg/RobotTrajectory) -- trajectory to be exectured
+
+        Returns
+        -------
+            Trajectory action
+
         """
         self.execute_trajectory_action_client.wait_for_server()
 
@@ -305,14 +365,15 @@ class MoveItApi():
 
     async def get_joint_states(self, pose: Pose) -> Optional[JointState]:
         """
-        Calculates joint states for a given pose
+        Calculate joint states for a given pose.
 
         Arguments:
-            - pose (geometry_msgs/Pose) - The pose of the end effector
+            pose (geometry_msgs/Pose) - The pose of the end effector
 
         Returns
         -------
             The states for each joint to reach that pose
+
         """
         # Perform IK request on Pose to get the jointStates
         results = await self.perform_IK_request(pose)
@@ -325,36 +386,30 @@ class MoveItApi():
         else:
             return results[0].joint_state
 
-    # TODO: jihai
     def joint_state_callback(self, joint_states: JointState):
-        """
-        Joint State subscriber callback
-        """
+        """Joint State subscriber callback."""
         self.joint_state = joint_states
 
-    # TODO: jihai
     def current_state_to_robot_state(self) -> RobotState:
-        """
-        Constructs a robot state object from the internal joint states
-        """
+        """Construct a robot state object from the internal joint states."""
         robot_state = RobotState()
         robot_state.joint_state = self.joint_state
         self.node.get_logger().warn(
             f"Getting Current Robot Joints {robot_state.joint_state}")
         return robot_state
 
-    # TODO: Anuj
     async def perform_IK_request(self, pose: Pose
                                  ) -> Tuple[RobotState, MoveItErrorCodes]:
         """
-        Constructs an IK request and calls the service
+        Construct an IK request and calls the service.
 
         Arguments:
-            - pose (geometry_msgs/Pose) - The pose of the end effector
+            pose (geometry_msgs/Pose) - The pose of the end effector
 
         Returns
         -------
             RobotState of the start position and error_code of the GetPositionIK service
+
         """
         request = PositionIKRequest()
         request.group_name = self.groupname
@@ -368,7 +423,18 @@ class MoveItApi():
         return (result.solution, result.error_code)
 
     async def create_joint_constraint(self, point: Point, orientation: Quaternion) -> Constraints:
+        """
+        Construct a joint_constraints message give a point and orientation.
 
+        Arguments:
+            point (geometry_msgs/Point) -- position constraint of the end effector
+            orientation (geometry_msgs/Quaternion) -- orienntation constraint of the end effector
+
+        Returns
+        -------
+            A joint_constraint message
+
+        """
         # IK for goal position to get robot state
         pose = Pose()
         current_pose = await self.get_end_effector_pose()
@@ -401,19 +467,23 @@ class MoveItApi():
             f"Creating Joint Constraint {joint_constraints}")
         return joint_constraints
 
-    # TODO: Stephen
-    async def create_goal_constraint(self, point: Point, orientation: Quaternion, use_jc: bool = True) -> Constraints:
+    async def create_goal_constraint(self,
+                                     point: Point,
+                                     orientation: Quaternion,
+                                     use_jc: bool = True) -> Constraints:
         """
-        Construct a moveit_msgs/Constraint for the end effector using a given quaternion and point
+        Construct a moveit_msgs/Constraint for the end effector using a given quaternion and point.
 
         Arguments:
-            - point (geometry_msgs/Point) -- position goal constraint of the end effector
-            - orientation (geometry_msgs/Quaternion) -- orienntation goal constraint of the end effector
-            - use_jc (bool) -- use joint constraints instead of position and orientation constraints
-        Returns:
-            - Constraints message type
-        """
+            point (geometry_msgs/Point) -- position constraint of the end effector
+            orientation (geometry_msgs/Quaternion) -- orienntation constraint of the end effector
+            use_jc (bool) -- use joint constraints instead of position/orientation constraints
 
+        Returns
+        -------
+            - Constraints message type
+
+        """
         if use_jc:
             return Constraints(
                 joint_constraints=await self.create_joint_constraint(
@@ -433,19 +503,18 @@ class MoveItApi():
                                orientation_constraints=orConstraints,
                                )
 
-    # TODO: Carter
     def create_position_constraint(self, point: Point) -> PositionConstraint:
         """
-        Creates a position constraint for the end effector.
+        Create a position constraint for the end effector.
 
         Arguments:
-            + point (geometry_msgs/Point) - The point to constrain the end effector to.
+            point (geometry_msgs/Point) - The point to constrain the end effector to.
 
         Returns
         -------
             A PositionConstraint for the end effector.
-        """
 
+        """
         # create sphere primitive representing goal pose region
         dimensions = [0.01]
         primitive = SolidPrimitive(
@@ -479,13 +548,15 @@ class MoveItApi():
 
     def create_orientation_constraint(self, orientation: Quaternion) -> OrientationConstraint:
         """
-        Construct a moveit_msgs/OrientationConstraint for the end effector using a given quaternion
+        Construct a moveit_msgs/OrientationConstraint for the end effector using a quaternion.
 
         Arguments:
-            orientation (geometry_msgs/Quaternion) -- orienntation constraint of the end effector
+            orientation (geometry_msgs/Quaternion) -- orientation constraint of the end effector
 
-        Returns:
+        Returns
+        -------
             OrientationConstraint message type
+
         """
         header = Header(frame_id=self.base_frame,
                         stamp=self.node.get_clock().now().to_msg())
@@ -500,11 +571,13 @@ class MoveItApi():
                                      absolute_z_axis_tolerance=0.1)
 
     async def get_end_effector_pose(self) -> PoseStamped:
-        """ Gets the current end effector pose
+        """
+        Get the current end effector pose.
 
-        Returns:
+        Returns
         -------
-        A Pose describing the end effector
+            A Pose describing the end effector
+
         """
         ee_tf = await self.tf_buffer.lookup_transform_async(
             self.base_frame, self.end_effector_frame, Time(seconds=0))
@@ -525,19 +598,20 @@ class MoveItApi():
         )
 
     def spawn_box(self, pose: Pose, size: Vector3, name: str):
-        """Spawns a box in the planning scene
+        """
+        Spawn a box in the planning scene.
 
         Arguments:
-            + pose (geometry_ns/Pose) - The pose of the box
-            + size (geometry_ns/Vector3) - The size of the box
-            + name (str) - The name of the box, used as the id of the collision
-                object in the scene
+            pose (geometry_ns/Pose) -- The pose of the box
+            size (geometry_ns/Vector3) -- The size of the box
+            name (str) -- The name of the box, used as the id of the collision
+                          object in the scene
 
-        Returns:
+        Returns
         -------
             None
-        """
 
+        """
         # create primitive box
         primitive = SolidPrimitive(
             type=SolidPrimitive.BOX,
