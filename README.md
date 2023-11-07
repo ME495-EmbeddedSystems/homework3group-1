@@ -1,5 +1,6 @@
 # ME495 Embedded Systems Homework 3 Part 2 - moveit_wrapper
 Authors: Stephen Ferro, Anuj Natraj, Jihai Zhao, Carter DiOrio, Kyle Wang
+
 Description: A package to simplify using the Moveit package with robot arms. The package includes a class which can be used to plan and execute trajectories. 
 1. Intialize a MoveItApi() object with the following configuration options:
     - node: the node used to interface with ROS
