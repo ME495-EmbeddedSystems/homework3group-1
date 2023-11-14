@@ -19,7 +19,7 @@ from moveit_msgs.msg import (
     CollisionObject,
 )
 
-from moveit_msgs.srv import GetPositionIK
+from moveit_msgs.srv import GetPositionIK, GetCartesianPath
 from tf2_ros import Buffer
 from tf2_ros.transform_listener import TransformListener
 import rclpy
@@ -43,6 +43,8 @@ class ErrorCodes(Enum):
     NO_ERROR = 0,
     IK_FAIL = 1,
     GOAL_NOT_SPECIFIED = 2,
+    PATH_NOT_COMPLETE = 3,
+
 
 
 class PlanResult:
@@ -90,10 +92,12 @@ class MoveItApi():
             'move_action'
         )
 
-        # Creating IK client
+        # Creating IK clients
         self.cbgroup = MutuallyExclusiveCallbackGroup()
         self.ik_client = self.node.create_client(
             GetPositionIK, "compute_ik", callback_group=self.cbgroup)
+        self.cartesian_client = self.node.create_client(
+            GetCartesianPath, "compute_cartesian_path", callback_group=self.cbgroup)
 
         # Create ExecuteTrajectory.action client
         self.execute_trajectory_action_client = ActionClient(
@@ -638,3 +642,51 @@ class MoveItApi():
         planning_scene.world.collision_objects.append(collision_object)
 
         self.planning_scene_publisher.publish(planning_scene)
+
+    async def getCartesianPath(self,
+                               waypoints: list[Pose],
+                               start_state: RobotState = None,
+                               max_velocity_scaling_factor: float = 0.1,
+                               max_acceleration_scaling_factor: float = 0.1) -> PlanResult:
+        """
+        Construct a robot trajectory given a list of waypoints
+
+        Arguments:
+            waypoints (List[geometry_msgs/Pose]) -- A list of waypoints to navigate through
+
+        Keyword Arguments:
+            start_state (moveit_msgs/RobotState) -- Start state of the trajectory (default: {None})
+            max_velocity_scaling_factor (float) -- Velocity Scaling factor (default: {0.1})
+            max_acceleration_scaling_factor (float) -- Acceleration Scaling factor (default: {0.1})
+
+        Returns:
+            A trajectory of the planned path or the executed path
+
+        """
+        request = GetCartesianPath.Request
+        request._header.stamp = self.node.get_clock().now().to_msg()
+        request._header.frame_id = self.end_effector_frame
+        request.group_name = self.groupname
+        request.waypoints = waypoints
+        request.avoid_collisions = True
+        request.max_velocity_scaling_factor = max_velocity_scaling_factor
+        request.max_acceleration_scaling_factor = max_acceleration_scaling_factor
+
+        # If start state is undefined, use current state
+        if start_state is None:
+            request.start_state = self.current_state_to_robot_state()
+        else:
+            request.start_state = start_state
+
+        # Compute path
+        result = await self.cartesian_client.call_async(request)
+        
+        # Defining errors
+        if result.fraction < 1.0:
+            error = 0
+        else:
+            error = 3
+
+        return PlanResult(error_code=error,
+                          trajectory=result.solution,
+                          moveiterror=result.error_code)
