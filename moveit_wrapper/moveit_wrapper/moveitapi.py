@@ -92,7 +92,7 @@ class MoveItApi():
             'move_action'
         )
 
-        # Creating IK clients
+        # Creating service clients
         self.cbgroup = MutuallyExclusiveCallbackGroup()
         self.ik_client = self.node.create_client(
             GetPositionIK, "compute_ik", callback_group=self.cbgroup)
@@ -643,7 +643,7 @@ class MoveItApi():
 
         self.planning_scene_publisher.publish(planning_scene)
 
-    async def getCartesianPath(self,
+    async def create_cartesian_path(self,
                                waypoints: list[Pose],
                                start_state: RobotState = None,
                                max_velocity_scaling_factor: float = 0.1,
@@ -663,12 +663,13 @@ class MoveItApi():
             A trajectory of the planned path or the executed path
 
         """
-        request = GetCartesianPath.Request
-        request._header.stamp = self.node.get_clock().now().to_msg()
-        request._header.frame_id = self.end_effector_frame
+        request = GetCartesianPath.Request()
+        request.header.stamp = self.node.get_clock().now().to_msg()
+        request.header.frame_id = self.end_effector_frame
         request.group_name = self.groupname
         request.waypoints = waypoints
-        request.avoid_collisions = True
+        request.link_name = self.end_effector_frame
+        request.max_step = 0.01
         request.max_velocity_scaling_factor = max_velocity_scaling_factor
         request.max_acceleration_scaling_factor = max_acceleration_scaling_factor
 
