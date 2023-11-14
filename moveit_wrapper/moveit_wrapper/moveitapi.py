@@ -665,13 +665,16 @@ class MoveItApi():
         """
         request = GetCartesianPath.Request()
         request.header.stamp = self.node.get_clock().now().to_msg()
-        request.header.frame_id = self.end_effector_frame
+        request.header.frame_id = self.base_frame
         request.group_name = self.groupname
         request.waypoints = waypoints
         request.link_name = self.end_effector_frame
         request.max_step = 0.01
+        request.avoid_collisions = True
         request.max_velocity_scaling_factor = max_velocity_scaling_factor
         request.max_acceleration_scaling_factor = max_acceleration_scaling_factor
+        # request.cartesian_speed_limited_link = self.end_effector_frame
+        # request.max_cartesian_speed = 0.05
 
         # If start state is undefined, use current state
         if start_state is None:
