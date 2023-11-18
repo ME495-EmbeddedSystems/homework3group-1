@@ -46,7 +46,6 @@ class ErrorCodes(Enum):
     PATH_NOT_COMPLETE = 3,
 
 
-
 class PlanResult:
     def __init__(self,
                  error_code,
@@ -462,8 +461,8 @@ class MoveItApi():
             joint_constraint = JointConstraint(
                 joint_name=joint_state.name[i],
                 position=joint_state.position[i],
-                tolerance_above=0.1,
-                tolerance_below=0.1
+                tolerance_above=0.01,
+                tolerance_below=0.01
             )
             joint_constraints.append(joint_constraint)
 
@@ -644,10 +643,11 @@ class MoveItApi():
         self.planning_scene_publisher.publish(planning_scene)
 
     async def create_cartesian_path(self,
-                               waypoints: list[Pose],
-                               start_state: RobotState = None,
-                               max_velocity_scaling_factor: float = 0.1,
-                               max_acceleration_scaling_factor: float = 0.1) -> PlanResult:
+                                    waypoints: list[Pose],
+                                    start_state: RobotState = None,
+                                    max_velocity_scaling_factor: float = 0.1,
+                                    max_acceleration_scaling_factor: float = 0.1,
+                                    orienation_constraint=None) -> PlanResult:
         """
         Construct a robot trajectory given a list of waypoints
 
@@ -673,8 +673,25 @@ class MoveItApi():
         request.avoid_collisions = True
         request.max_velocity_scaling_factor = max_velocity_scaling_factor
         request.max_acceleration_scaling_factor = max_acceleration_scaling_factor
+
         # request.cartesian_speed_limited_link = self.end_effector_frame
         # request.max_cartesian_speed = 0.05
+
+        if orienation_constraint is not None:
+            request.path_constraints = Constraints(
+                orientation_constraints=[
+                    OrientationConstraint(
+                        header=Header(
+                            frame_id=self.base_frame,
+                        ),
+                        orientation=orienation_constraint,
+                        link_name=self.end_effector_frame,
+                        absolute_x_axis_tolerance=1.0,
+                        absolute_y_axis_tolerance=1.0,
+                        absolute_z_axis_tolerance=1.0,
+                    )
+                ]
+            )
 
         # If start state is undefined, use current state
         if start_state is None:
@@ -684,12 +701,12 @@ class MoveItApi():
 
         # Compute path
         result = await self.cartesian_client.call_async(request)
-        
+
         # Defining errors
         if result.fraction < 1.0:
-            error = 0
+            error = ErrorCodes.PATH_NOT_COMPLETE
         else:
-            error = 3
+            error = ErrorCodes.NO_ERROR
 
         return PlanResult(error_code=error,
                           trajectory=result.solution,

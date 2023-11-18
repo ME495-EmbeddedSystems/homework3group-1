@@ -1,7 +1,7 @@
 from geometry_msgs.msg import Pose, Point
 from control_msgs.action import GripperCommand
 import control_msgs.msg as control_msg
-from moveitapi import MoveItApi, ErrorCodes
+from moveit_wrapper.moveitapi import MoveItApi, ErrorCodes
 from rclpy.action import ActionClient
 from typing import List
 import numpy as np
@@ -40,33 +40,43 @@ class GraspPlanner:
 
         plan_result = await self.moveit_api.plan_async(
             point=grasp.approach_pose.position,
-            orientation=grasp.approach_pose.orientation
+            orientation=grasp.approach_pose.orientation,
+            execute=True
         )
+
+        self.node.get_logger().warn("approach point!")
 
         if plan_result.error_code != ErrorCodes.NO_ERROR:
             self.node.get_logger().warn(
                 f"Failed grasp approach point {plan_result.error_code}")
             return
 
+        self.node.get_logger().warn(f"succeded in going to approach point")
+
         interpolated_poses = linearly_interpolate_position(
-            grasp.approach_pose, grasp.grasp_pose, 100)
+            grasp.approach_pose, grasp.grasp_pose, 500)
 
         to_grasp_result = await self.moveit_api.create_cartesian_path(interpolated_poses)
 
-        if to_grasp_result != ErrorCodes.NO_ERROR:
+        if to_grasp_result.error_code != ErrorCodes.NO_ERROR:
             self.node.get_logger().warn(
-                f"Failed grasp approach point {plan_result.error_code}")
+                f"Failed grasp point planning {to_grasp_result.error_code}")
             return
+
+        self.node.get_logger().warn("succeded grasp point planning")
+        to_grasp_result = await self.moveit_api.execute_trajectory(to_grasp_result.trajectory)
 
         goal_handle = await self.gripper_command_client.send_goal_async(
             GripperCommand.Goal(command=grasp.gripper_command))
         grasp_command_result = await goal_handle.get_result_async()
 
+        ee_pose = await self.moveit_api.get_end_effector_pose()
         interpolated_poses = linearly_interpolate_position(
-            grasp.grasp_pose, grasp.approach_pose, 100
+            ee_pose.pose, grasp.approach_pose, 100
         )
 
         to_retreat_result = await self.moveit_api.create_cartesian_path(interpolated_poses)
+        to_retreat_result = await self.moveit_api.execute_trajectory(to_retreat_result.trajectory)
 
 
 def linearly_interpolate_position(pose1: Pose, pose2: Pose, n: int) -> List[Pose]:
