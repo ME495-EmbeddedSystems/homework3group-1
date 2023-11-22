@@ -397,8 +397,6 @@ class MoveItApi():
         """Construct a robot state object from the internal joint states."""
         robot_state = RobotState()
         robot_state.joint_state = self.joint_state
-        self.node.get_logger().warn(
-            f"Getting Current Robot Joints {robot_state.joint_state}")
         return robot_state
 
     async def perform_IK_request(self, pose: Pose
@@ -466,8 +464,6 @@ class MoveItApi():
             )
             joint_constraints.append(joint_constraint)
 
-        self.node.get_logger().warn(
-            f"Creating Joint Constraint {joint_constraints}")
         return joint_constraints
 
     async def create_goal_constraint(self,

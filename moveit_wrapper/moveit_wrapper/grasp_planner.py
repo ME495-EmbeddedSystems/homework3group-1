@@ -2,21 +2,23 @@ from geometry_msgs.msg import Pose, Point
 from control_msgs.action import GripperCommand
 import control_msgs.msg as control_msg
 from moveit_wrapper.moveitapi import MoveItApi, ErrorCodes
+from franka_msgs.action import Grasp
 from rclpy.action import ActionClient
 from typing import List
 import numpy as np
+from rclpy.callback_groups import ReentrantCallbackGroup
 
 
 class GraspPlan:
     def __init__(self,
                  approach_pose: Pose,
                  grasp_pose: Pose,
-                 gripper_command: control_msg.GripperCommand,
+                 grasp_command: Grasp.Goal,
                  retreat_pose: Pose):
         self.approach_pose = approach_pose
         self.grasp_pose = grasp_pose
-        self.gripper_command = gripper_command
-        self.retreat_pose: retreat_pose
+        self.grasp_command = grasp_command
+        self.retreat_pose = retreat_pose
 
 
 class GraspPlanner:
@@ -30,53 +32,45 @@ class GraspPlanner:
         self.moveit_api = moveit_api
         self.node = self.moveit_api.node
 
-        self.gripper_command_client = ActionClient(
+        self.grasp_client = ActionClient(
             self.node,
-            GripperCommand,
+            Grasp,
             gripper_action_name,
+            callback_group=ReentrantCallbackGroup(),
         )
 
-    async def execute_grasp_plan(self, grasp: GraspPlan):
+    async def execute_grasp_plan(self, grasp_plan: GraspPlan):
 
+        self.node.get_logger().warn("going to approach point!")
+        self.node.get_logger().warn(
+            f"grasp pose: {grasp_plan.approach_pose.orientation}")
         plan_result = await self.moveit_api.plan_async(
-            point=grasp.approach_pose.position,
-            orientation=grasp.approach_pose.orientation,
+            point=grasp_plan.approach_pose.position,
+            orientation=grasp_plan.approach_pose.orientation,
             execute=True
         )
 
-        self.node.get_logger().warn("approach point!")
+        self.node.get_logger().warn(f"succeeded in going to approach point")
 
-        if plan_result.error_code != ErrorCodes.NO_ERROR:
-            self.node.get_logger().warn(
-                f"Failed grasp approach point {plan_result.error_code}")
-            return
-
-        self.node.get_logger().warn(f"succeded in going to approach point")
-
-        interpolated_poses = linearly_interpolate_position(
-            grasp.approach_pose, grasp.grasp_pose, 500)
-
-        to_grasp_result = await self.moveit_api.create_cartesian_path(interpolated_poses)
-
-        if to_grasp_result.error_code != ErrorCodes.NO_ERROR:
-            self.node.get_logger().warn(
-                f"Failed grasp point planning {to_grasp_result.error_code}")
-            return
-
-        self.node.get_logger().warn("succeded grasp point planning")
-        to_grasp_result = await self.moveit_api.execute_trajectory(to_grasp_result.trajectory)
-
-        goal_handle = await self.gripper_command_client.send_goal_async(
-            GripperCommand.Goal(command=grasp.gripper_command))
-        grasp_command_result = await goal_handle.get_result_async()
-
-        ee_pose = await self.moveit_api.get_end_effector_pose()
-        interpolated_poses = linearly_interpolate_position(
-            ee_pose.pose, grasp.approach_pose, 100
+        self.node.get_logger().warn("going to grasp point!")
+        self.node.get_logger().warn(
+            f"grasp pose: {grasp_plan.grasp_pose.orientation}")
+        plan_result = await self.moveit_api.plan_async(
+            point=grasp_plan.grasp_pose.position,
+            orientation=grasp_plan.grasp_pose.orientation,
+            execute=True
         )
 
-        to_retreat_result = await self.moveit_api.create_cartesian_path(interpolated_poses)
-        to_retreat_result = await self.moveit_api.execute_trajectory(to_retreat_result.trajectory)
+        self.node.get_logger().warn("grasping...")
+        goal_handle = await self.grasp_client.send_goal_async(grasp_plan.grasp_command)
+        grasp_command_result = await goal_handle.get_result_async()
+        self.node.get_logger().warn("finished grasp")
+
+        plan_result = await self.moveit_api.plan_async(
+            point=grasp_plan.retreat_pose.position,
+            orientation=grasp_plan.retreat_pose.orientation,
+            execute=True
+        )
 
 
 def linearly_interpolate_position(pose1: Pose, pose2: Pose, n: int) -> List[Pose]:
