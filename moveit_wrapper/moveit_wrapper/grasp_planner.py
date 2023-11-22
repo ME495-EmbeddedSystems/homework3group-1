@@ -1,23 +1,24 @@
 from geometry_msgs.msg import Pose, Point
-from control_msgs.action import GripperCommand
 import control_msgs.msg as control_msg
 from moveit_wrapper.moveitapi import MoveItApi, ErrorCodes
 from franka_msgs.action import Grasp
 from rclpy.action import ActionClient
+from rclpy.action.client import ClientGoalHandle
 from typing import List
 import numpy as np
 from rclpy.callback_groups import ReentrantCallbackGroup
+from typing import Awaitable, Optional
 
 
 class GraspPlan:
     def __init__(self,
                  approach_pose: Pose,
                  grasp_pose: Pose,
-                 grasp_command: Grasp.Goal,
+                 grasp_goal: Grasp.Goal,
                  retreat_pose: Pose):
         self.approach_pose = approach_pose
         self.grasp_pose = grasp_pose
-        self.grasp_command = grasp_command
+        self.grasp_goal = grasp_goal
         self.retreat_pose = retreat_pose
 
 
@@ -39,7 +40,7 @@ class GraspPlanner:
             callback_group=ReentrantCallbackGroup(),
         )
 
-    async def execute_grasp_plan(self, grasp_plan: GraspPlan):
+    async def execute_grasp_plan(self, grasp_plan: GraspPlan) -> Awaitable[bool]:
 
         self.node.get_logger().warn("going to approach point!")
         self.node.get_logger().warn(
@@ -61,16 +62,37 @@ class GraspPlanner:
             execute=True
         )
 
-        self.node.get_logger().warn("grasping...")
-        goal_handle = await self.grasp_client.send_goal_async(grasp_plan.grasp_command)
-        grasp_command_result = await goal_handle.get_result_async()
-        self.node.get_logger().warn("finished grasp")
+        # 3) grasp
+        grasp_result = self.grasp(grasp_plan.grasp_goal)
+        if grasp_result is None:
+            self.node.get_logger().error("Grasp Action Goal rejected!")
+            return False
 
+        # 4) retreat
         plan_result = await self.moveit_api.plan_async(
             point=grasp_plan.retreat_pose.position,
             orientation=grasp_plan.retreat_pose.orientation,
             execute=True
         )
+
+        return True
+
+    async def grasp(self, grasp_action_goal: Grasp.Goal) -> Optional[Grasp.Result]:
+        """
+        Sends a GraspAction to the gripper.
+
+        Arguments:
+            + grasp_action_goal (franka_msgs/action/GraspAction.Goal): the grasp goal to send to the gripper
+
+        Returns:
+        -------
+            Optional[Grasp.Result] if the goal was accepted and completed, None otherwise.
+        """
+        goal_handle: ClientGoalHandle = await self.grasp_client.send_goal_async(grasp_action_goal)
+        if not goal_handle.accepted:
+            return None
+        result: Grasp.Result = await goal_handle.get_result_async()
+        return result
 
 
 def linearly_interpolate_position(pose1: Pose, pose2: Pose, n: int) -> List[Pose]:
