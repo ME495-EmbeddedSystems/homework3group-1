@@ -654,6 +654,7 @@ class MoveItApi():
             start_state (moveit_msgs/RobotState) -- Start state of the trajectory (default: {None})
             max_velocity_scaling_factor (float) -- Velocity Scaling factor (default: {0.1})
             max_acceleration_scaling_factor (float) -- Acceleration Scaling factor (default: {0.1})
+            orientation_cosntraint (geometry_msgs/Quaternion) -- Orientation to constrain the ee
 
         Returns:
             A trajectory of the planned path or the executed path
@@ -669,9 +670,6 @@ class MoveItApi():
         request.avoid_collisions = True
         request.max_velocity_scaling_factor = max_velocity_scaling_factor
         request.max_acceleration_scaling_factor = max_acceleration_scaling_factor
-
-        # request.cartesian_speed_limited_link = self.end_effector_frame
-        # request.max_cartesian_speed = 0.05
 
         if orienation_constraint is not None:
             request.path_constraints = Constraints(
