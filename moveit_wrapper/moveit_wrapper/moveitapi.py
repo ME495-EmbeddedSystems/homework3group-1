@@ -90,10 +90,6 @@ class MoveItApi():
         self.node = node
         self.robot_model_name = robot_model_name
 
-        # 2 lists to keep track of objects attached to environment/ee
-        self.objList = []
-        self.objListIndex = []
-
         # Create MoveGroup.action client
         self.move_group_action_client = ActionClient(
             self.node,
@@ -721,3 +717,32 @@ class MoveItApi():
         return PlanResult(error_code=error,
                           trajectory=result.solution,
                           moveiterror=result.error_code)
+
+    async def attachObject(self, tfStamped: List[TransformStamped]) -> bool:
+        """
+        Create an object attached to the gripper for the planning scene
+
+        Arguments:
+            tfStamped (List(geometry_messages/TransformStamped) -- A list of transforms
+
+        Returns
+        -------
+            A bool indicating the success
+
+        """
+        # Creating Planning Scene object
+        # Scene name left empty - it is empty in rviz
+        scene = PlanningScene()
+        scene.robot_state = self.current_state_to_robot_state()
+        scene.robot_model_name = self.robot_model_name
+        scene.is_diff = True
+        scene.link_padding = 0.0
+        scene.link_scale = 1.0
+        scene.fixed_frame_transforms = tfStamped
+        #TODO
+        scene.allowed_collision_matrix
+
+        request = ApplyPlanningScene.Request(scene=scene)
+        result = await self.apply_planning.call_async(request)
+
+        return result.success
