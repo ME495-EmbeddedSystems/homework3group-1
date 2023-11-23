@@ -19,7 +19,7 @@ from moveit_msgs.msg import (
     CollisionObject,
 )
 
-from moveit_msgs.srv import GetPositionIK, GetCartesianPath
+from moveit_msgs.srv import GetPositionIK, GetCartesianPath, ApplyPlanningScene
 from tf2_ros import Buffer
 from tf2_ros.transform_listener import TransformListener
 import rclpy
@@ -30,6 +30,7 @@ from geometry_msgs.msg import (
     Point,
     Quaternion,
     Vector3,
+    TransformStamped,
 )
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Header
@@ -65,7 +66,8 @@ class MoveItApi():
                  base_frame: str,
                  end_effector_frame: str,
                  group_name: str,
-                 joint_state_topic: str):
+                 joint_state_topic: str,
+                 robot_model_name: str = ""):
         """
         Initialize a wrapper for moveit.
 
@@ -80,9 +82,12 @@ class MoveItApi():
             end_effector_frame (str) -- the frame of the end effector
             group_name (str) -- the name of the planning group to use
             joint_state_topic (str) -- the topic to subscribe to for joint states
+            robot_model_name (str) -- the name of the robot, only needed for attaching\
+                                      objects to the end effector
 
         """
         self.node = node
+        self.robot_model_name = robot_model_name
 
         # Create MoveGroup.action client
         self.move_group_action_client = ActionClient(
@@ -97,6 +102,8 @@ class MoveItApi():
             GetPositionIK, "compute_ik", callback_group=self.cbgroup)
         self.cartesian_client = self.node.create_client(
             GetCartesianPath, "compute_cartesian_path", callback_group=self.cbgroup)
+        self.apply_planning = self.node.create_client(
+            ApplyPlanningScene, "apply_planning_scene", callback_group=self.cbgroup)
 
         # Create ExecuteTrajectory.action client
         self.execute_trajectory_action_client = ActionClient(
@@ -655,7 +662,8 @@ class MoveItApi():
             max_velocity_scaling_factor (float) -- Velocity Scaling factor (default: {0.1})
             max_acceleration_scaling_factor (float) -- Acceleration Scaling factor (default: {0.1})
 
-        Returns:
+        Returns
+        -------
             A trajectory of the planned path or the executed path
 
         """
@@ -707,3 +715,32 @@ class MoveItApi():
         return PlanResult(error_code=error,
                           trajectory=result.solution,
                           moveiterror=result.error_code)
+
+    async def attachObject(self, tfStamped: List[TransformStamped]) -> bool:
+        """
+        Create an object attached to the gripper for the planning scene
+
+        Arguments:
+            tfStamped (List(geometry_messages/TransformStamped) -- A list of transforms
+
+        Returns
+        -------
+            A bool indicating the success
+
+        """
+        # Creating Planning Scene object
+        # Scene name left empty - it is empty in rviz
+        scene = PlanningScene()
+        scene.robot_state = self.current_state_to_robot_state()
+        scene.robot_model_name = self.robot_model_name
+        scene.is_diff = True
+        scene.link_padding = 0.0
+        scene.link_scale = 1.0
+        scene.fixed_frame_transforms = tfStamped
+        #TODO
+        scene.allowed_collision_matrix
+
+        request = ApplyPlanningScene.Request(scene=scene)
+        result = await self.apply_planning.call_async(request)
+
+        return result.success
