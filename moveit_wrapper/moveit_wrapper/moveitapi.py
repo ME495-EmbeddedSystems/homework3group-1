@@ -17,6 +17,7 @@ from moveit_msgs.msg import (
     JointConstraint,
     PlanningScene,
     CollisionObject,
+    AttachedCollisionObject,
 )
 
 from moveit_msgs.srv import GetPositionIK, GetCartesianPath, ApplyPlanningScene
@@ -88,6 +89,10 @@ class MoveItApi():
         """
         self.node = node
         self.robot_model_name = robot_model_name
+
+        # 2 lists to keep track of objects attached to environment/ee
+        self.objList = []
+        self.objListIndex = []
 
         # Create MoveGroup.action client
         self.move_group_action_client = ActionClient(
@@ -642,7 +647,6 @@ class MoveItApi():
             is_diff=True,
         )
         planning_scene.world.collision_objects.append(collision_object)
-
         self.planning_scene_publisher.publish(planning_scene)
 
     async def create_cartesian_path(self,
@@ -737,10 +741,74 @@ class MoveItApi():
         scene.link_padding = 0.0
         scene.link_scale = 1.0
         scene.fixed_frame_transforms = tfStamped
-        #TODO
+        # TODO
         scene.allowed_collision_matrix
 
         request = ApplyPlanningScene.Request(scene=scene)
         result = await self.apply_planning.call_async(request)
 
         return result.success
+
+    def createAttachObject(self,
+                           objName: str,
+                           primitivePoses: List[Pose],
+                           primitives: List[SolidPrimitive]):
+        self.objListIndex.append(objName)
+        index = self.objListIndex.index(objName)
+
+        # create collision object
+        collision_object = CollisionObject(
+            header=Header(
+                frame_id=self.end_effector_frame,
+                stamp=self.node.get_clock().now().to_msg()),
+            id=objName,
+            primitive_poses=primitivePoses,
+            primitives=primitives,
+            subframe_names=objName,
+            subframe_poses=primitivePoses,
+            operation=CollisionObject.ADD)
+
+        attached_object = AttachedCollisionObject(
+            link_name=self.end_effector_frame,
+            object=collision_object
+        )
+
+        self.objList.append(attached_object)
+        return index
+
+    def attachObjectToEE(self, objName: str):
+        # Obtain collision object
+        index = self.objListIndex.index(objName)
+        attached_object = self.objList[index]
+
+        # Update Collision object
+        attached_object.object.header.stamp = self.node.get_clock().now().to_msg()
+
+        # Publish Collision Object
+        planning_scene = PlanningScene(
+            is_diff=True,
+        )
+        planning_scene.robot_state.attached_collision_objects.append(
+            attached_object)
+        self.planning_scene_publisher.publish(planning_scene)
+
+        return index
+    
+    def removeObjectFromEE(self, objName: str):
+        # Obtain collision object
+        index = self.objListIndex.index(objName)
+        attached_object = self.objList[index]
+
+        # Update Collision object
+        attached_object.object.operation = CollisionObject.REMOVE
+        attached_object.object.header.stamp = self.node.get_clock().now().to_msg()
+
+        # Publish Collision Object
+        planning_scene = PlanningScene(
+            is_diff=True,
+        )
+        planning_scene.robot_state.attached_collision_objects.append(
+            attached_object)
+        self.planning_scene_publisher.publish(planning_scene)
+
+        return index
