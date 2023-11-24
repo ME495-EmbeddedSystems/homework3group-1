@@ -1,16 +1,18 @@
-from geometry_msgs.msg import Pose, Point
-import control_msgs.msg as control_msg
+from geometry_msgs.msg import Pose
 from moveit_wrapper.moveitapi import MoveItApi, ErrorCodes
 from franka_msgs.action import Grasp
 from rclpy.action import ActionClient
 from rclpy.action.client import ClientGoalHandle
-from typing import List
-import numpy as np
 from rclpy.callback_groups import ReentrantCallbackGroup
 from typing import Awaitable, Optional
 
 
 class GraspPlan:
+    """
+    Holds all the information needed to plan and execute a grasp. Acts
+    primarily as a struct of data, implements no logic.
+    """
+
     def __init__(self,
                  approach_pose: Pose,
                  grasp_pose: Pose,
@@ -24,7 +26,13 @@ class GraspPlan:
 
 class GraspPlanner:
     """
-    Plans and executes a grasp action
+    A class that plans and executes grasps.
+
+    A simple model of a grasp is a sequence of four actions. 1) Going to
+    an approach pose that lines up the robot for going to the grasp pose.
+    2) Going to the grasp pose, which is the pose that puts the end effector
+    in a position to grasp. 3) Grasping the object. 4) Retreating from the object
+    to a potentially different pose than the approach pose.
     """
 
     def __init__(self,
@@ -41,26 +49,36 @@ class GraspPlanner:
         )
 
     async def execute_grasp_plan(self, grasp_plan: GraspPlan) -> Awaitable[bool]:
+        """
+        Plans and executes a grasp plan.
 
-        self.node.get_logger().warn("going to approach point!")
-        self.node.get_logger().warn(
-            f"grasp pose: {grasp_plan.approach_pose.orientation}")
+        Arguments:
+            + grasp_plan (GraspPlan): the grasp plan to execute.
+
+        Returns:
+        -------
+            A bool indicating whether the grasp plan was executed successfully.
+        """
+
+        # 1) Goto approach point
         plan_result = await self.moveit_api.plan_async(
             point=grasp_plan.approach_pose.position,
             orientation=grasp_plan.approach_pose.orientation,
             execute=True
         )
+        if plan_result.error_code != ErrorCodes.SUCCESS:
+            self.node.get_logger().error("Failed to plan to approach point!")
+            return False
 
-        self.node.get_logger().warn(f"succeeded in going to approach point")
-
-        self.node.get_logger().warn("going to grasp point!")
-        self.node.get_logger().warn(
-            f"grasp pose: {grasp_plan.grasp_pose.orientation}")
+        # 2) Goto grasp point
         plan_result = await self.moveit_api.plan_async(
             point=grasp_plan.grasp_pose.position,
             orientation=grasp_plan.grasp_pose.orientation,
             execute=True
         )
+        if plan_result.error_code != ErrorCodes.SUCCESS:
+            self.node.get_logger().error("Failed to plan to grasp point!")
+            return False
 
         # 3) grasp
         grasp_result = self.grasp(grasp_plan.grasp_goal)
@@ -74,6 +92,9 @@ class GraspPlanner:
             orientation=grasp_plan.retreat_pose.orientation,
             execute=True
         )
+        if plan_result.error_code != ErrorCodes.SUCCESS:
+            self.node.get_logger().error("Failed to plan retreat!")
+            return False
 
         return True
 
@@ -93,22 +114,3 @@ class GraspPlanner:
             return None
         result: Grasp.Result = await goal_handle.get_result_async()
         return result
-
-
-def linearly_interpolate_position(pose1: Pose, pose2: Pose, n: int) -> List[Pose]:
-    x_space = np.linspace(pose1.position.x, pose2.position.x, n)
-    y_space = np.linspace(pose1.position.y, pose2.position.y, n)
-    z_space = np.linspace(pose1.position.z, pose2.position.z, n)
-
-    poses = []
-    for x, y, z in zip(x_space, y_space, z_space):
-        poses.append(Pose(
-            position=Point(
-                x=x,
-                y=y,
-                z=z
-            ),
-            orientation=pose1.orientation
-        ))
-
-    return poses
