@@ -654,7 +654,8 @@ class MoveItApi():
                                     start_state: RobotState = None,
                                     max_velocity_scaling_factor: float = 0.1,
                                     max_acceleration_scaling_factor: float = 0.1,
-                                    orienation_constraint=None) -> PlanResult:
+                                    orienation_constraint: Quaternion = None,
+                                    planning_link: str = None) -> PlanResult:
         """
         Construct a robot trajectory given a list of waypoints
 
@@ -665,18 +666,23 @@ class MoveItApi():
             start_state (moveit_msgs/RobotState) -- Start state of the trajectory (default: {None})
             max_velocity_scaling_factor (float) -- Velocity Scaling factor (default: {0.1})
             max_acceleration_scaling_factor (float) -- Acceleration Scaling factor (default: {0.1})
+            orientation_constraint (goemetry_msgs/Quaternion) -- Orientation to constrain the ee
+            planning_link (str) -- Alternative link to plan with
 
         Returns
         -------
             A trajectory of the planned path or the executed path
 
         """
+        if planning_link is None:
+            planning_link = self.end_effector_frame
+
         request = GetCartesianPath.Request()
         request.header.stamp = self.node.get_clock().now().to_msg()
         request.header.frame_id = self.base_frame
         request.group_name = self.groupname
         request.waypoints = waypoints
-        request.link_name = self.end_effector_frame
+        request.link_name = planning_link
         request.max_step = 0.01
         request.avoid_collisions = True
         request.max_velocity_scaling_factor = max_velocity_scaling_factor
@@ -776,7 +782,7 @@ class MoveItApi():
         self.objList.append(attached_object)
         return index
 
-    def attachObjectToEE(self, objName: str):
+    async def attachObjectToEE(self, objName: str):
         # Obtain collision object
         index = self.objListIndex.index(objName)
         attached_object = self.objList[index]
@@ -788,12 +794,18 @@ class MoveItApi():
         planning_scene = PlanningScene(
             is_diff=True,
         )
+        planning_scene.robot_state = self.current_state_to_robot_state()
         planning_scene.robot_state.attached_collision_objects.append(
             attached_object)
-        self.planning_scene_publisher.publish(planning_scene)
+        
+        # self.planning_scene_publisher.publish(planning_scene)
+        request = ApplyPlanningScene.Request(scene=planning_scene)
+        result = await self.apply_planning.call_async(request)
+
+        return result.success
 
         return index
-    
+
     def removeObjectFromEE(self, objName: str):
         # Obtain collision object
         index = self.objListIndex.index(objName)
