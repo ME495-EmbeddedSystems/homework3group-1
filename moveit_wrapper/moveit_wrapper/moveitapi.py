@@ -668,12 +668,15 @@ class MoveItApi():
             A trajectory of the planned path or the executed path
 
         """
+        if planning_link is None:
+            planning_link = self.end_effector_frame
+
         request = GetCartesianPath.Request()
         request.header.stamp = self.node.get_clock().now().to_msg()
         request.header.frame_id = self.base_frame
         request.group_name = self.groupname
         request.waypoints = waypoints
-        request.link_name = self.end_effector_frame
+        request.link_name = planning_link
         request.max_step = 0.01
         request.avoid_collisions = True
         request.max_velocity_scaling_factor = max_velocity_scaling_factor
