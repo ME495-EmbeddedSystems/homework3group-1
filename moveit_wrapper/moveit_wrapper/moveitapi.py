@@ -662,7 +662,8 @@ class MoveItApi():
             start_state (moveit_msgs/RobotState) -- Start state of the trajectory (default: {None})
             max_velocity_scaling_factor (float) -- Velocity Scaling factor (default: {0.1})
             max_acceleration_scaling_factor (float) -- Acceleration Scaling factor (default: {0.1})
-            orientation_cosntraint (geometry_msgs/Quaternion) -- Orientation to constrain the ee
+            orientation_constraint (goemetry_msgs/Quaternion) -- Orientation to constrain the ee
+            planning_link (str) -- Alternative link to plan with
 
         Returns
         -------
@@ -746,3 +747,73 @@ class MoveItApi():
         result = await self.apply_planning.call_async(request)
 
         return result.success
+
+    def createAttachObject(self,
+                           objName: str,
+                           primitivePoses: List[Pose],
+                           primitives: List[SolidPrimitive]):
+        self.objListIndex.append(objName)
+        index = self.objListIndex.index(objName)
+
+        # create collision object
+        collision_object = CollisionObject(
+            header=Header(
+                frame_id=self.end_effector_frame,
+                stamp=self.node.get_clock().now().to_msg()),
+            id=objName,
+            primitive_poses=primitivePoses,
+            primitives=primitives,
+            subframe_names=objName,
+            subframe_poses=primitivePoses,
+            operation=CollisionObject.ADD)
+
+        attached_object = AttachedCollisionObject(
+            link_name=self.end_effector_frame,
+            object=collision_object
+        )
+
+        self.objList.append(attached_object)
+        return index
+
+    async def attachObjectToEE(self, objName: str):
+        # Obtain collision object
+        index = self.objListIndex.index(objName)
+        attached_object = self.objList[index]
+
+        # Update Collision object
+        attached_object.object.header.stamp = self.node.get_clock().now().to_msg()
+
+        # Publish Collision Object
+        planning_scene = PlanningScene(
+            is_diff=True,
+        )
+        planning_scene.robot_state = self.current_state_to_robot_state()
+        planning_scene.robot_state.attached_collision_objects.append(
+            attached_object)
+        
+        # self.planning_scene_publisher.publish(planning_scene)
+        request = ApplyPlanningScene.Request(scene=planning_scene)
+        result = await self.apply_planning.call_async(request)
+
+        return result.success
+
+        return index
+
+    def removeObjectFromEE(self, objName: str):
+        # Obtain collision object
+        index = self.objListIndex.index(objName)
+        attached_object = self.objList[index]
+
+        # Update Collision object
+        attached_object.object.operation = CollisionObject.REMOVE
+        attached_object.object.header.stamp = self.node.get_clock().now().to_msg()
+
+        # Publish Collision Object
+        planning_scene = PlanningScene(
+            is_diff=True,
+        )
+        planning_scene.robot_state.attached_collision_objects.append(
+            attached_object)
+        self.planning_scene_publisher.publish(planning_scene)
+
+        return index
