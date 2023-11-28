@@ -668,15 +668,12 @@ class MoveItApi():
             A trajectory of the planned path or the executed path
 
         """
-        if planning_link is None:
-            planning_link = self.end_effector_frame
-
         request = GetCartesianPath.Request()
         request.header.stamp = self.node.get_clock().now().to_msg()
         request.header.frame_id = self.base_frame
         request.group_name = self.groupname
         request.waypoints = waypoints
-        request.link_name = planning_link
+        request.link_name = self.end_effector_frame
         request.max_step = 0.01
         request.avoid_collisions = True
         request.max_velocity_scaling_factor = max_velocity_scaling_factor
@@ -716,32 +713,3 @@ class MoveItApi():
         return PlanResult(error_code=error,
                           trajectory=result.solution,
                           moveiterror=result.error_code)
-
-    async def attachObject(self, tfStamped: List[TransformStamped]) -> bool:
-        """
-        Create an object attached to the gripper for the planning scene
-
-        Arguments:
-            tfStamped (List(geometry_messages/TransformStamped) -- A list of transforms
-
-        Returns
-        -------
-            A bool indicating the success
-
-        """
-        # Creating Planning Scene object
-        # Scene name left empty - it is empty in rviz
-        scene = PlanningScene()
-        scene.robot_state = self.current_state_to_robot_state()
-        scene.robot_model_name = self.robot_model_name
-        scene.is_diff = True
-        scene.link_padding = 0.0
-        scene.link_scale = 1.0
-        scene.fixed_frame_transforms = tfStamped
-        #TODO
-        scene.allowed_collision_matrix
-
-        request = ApplyPlanningScene.Request(scene=scene)
-        result = await self.apply_planning.call_async(request)
-
-        return result.success
