@@ -650,8 +650,7 @@ class MoveItApi():
                                     start_state: RobotState = None,
                                     max_velocity_scaling_factor: float = 0.1,
                                     max_acceleration_scaling_factor: float = 0.1,
-                                    orienation_constraint: Quaternion = None,
-                                    planning_link: str = None) -> PlanResult:
+                                    orienation_constraint: Quaternion = None) -> PlanResult:
         """
         Construct a robot trajectory given a list of waypoints
 
@@ -663,7 +662,6 @@ class MoveItApi():
             max_velocity_scaling_factor (float) -- Velocity Scaling factor (default: {0.1})
             max_acceleration_scaling_factor (float) -- Acceleration Scaling factor (default: {0.1})
             orientation_constraint (goemetry_msgs/Quaternion) -- Orientation to constrain the ee
-            planning_link (str) -- Alternative link to plan with
 
         Returns
         -------
@@ -678,7 +676,7 @@ class MoveItApi():
         request.header.frame_id = self.base_frame
         request.group_name = self.groupname
         request.waypoints = waypoints
-        request.link_name = planning_link
+        request.link_name = self.end_effector_frame
         request.max_step = 0.01
         request.avoid_collisions = True
         request.max_velocity_scaling_factor = max_velocity_scaling_factor
