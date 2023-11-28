@@ -668,15 +668,12 @@ class MoveItApi():
             A trajectory of the planned path or the executed path
 
         """
-        if planning_link is None:
-            planning_link = self.end_effector_frame
-
         request = GetCartesianPath.Request()
         request.header.stamp = self.node.get_clock().now().to_msg()
         request.header.frame_id = self.base_frame
         request.group_name = self.groupname
         request.waypoints = waypoints
-        request.link_name = planning_link
+        request.link_name = self.end_effector_frame
         request.max_step = 0.01
         request.avoid_collisions = True
         request.max_velocity_scaling_factor = max_velocity_scaling_factor
@@ -716,102 +713,3 @@ class MoveItApi():
         return PlanResult(error_code=error,
                           trajectory=result.solution,
                           moveiterror=result.error_code)
-
-    async def attachObject(self, tfStamped: List[TransformStamped]) -> bool:
-        """
-        Create an object attached to the gripper for the planning scene
-
-        Arguments:
-            tfStamped (List(geometry_messages/TransformStamped) -- A list of transforms
-
-        Returns
-        -------
-            A bool indicating the success
-
-        """
-        # Creating Planning Scene object
-        # Scene name left empty - it is empty in rviz
-        scene = PlanningScene()
-        scene.robot_state = self.current_state_to_robot_state()
-        scene.robot_model_name = self.robot_model_name
-        scene.is_diff = True
-        scene.link_padding = 0.0
-        scene.link_scale = 1.0
-        scene.fixed_frame_transforms = tfStamped
-        #TODO
-        scene.allowed_collision_matrix
-
-        request = ApplyPlanningScene.Request(scene=scene)
-        result = await self.apply_planning.call_async(request)
-
-        return result.success
-
-    def createAttachObject(self,
-                           objName: str,
-                           primitivePoses: List[Pose],
-                           primitives: List[SolidPrimitive]):
-        self.objListIndex.append(objName)
-        index = self.objListIndex.index(objName)
-
-        # create collision object
-        collision_object = CollisionObject(
-            header=Header(
-                frame_id=self.end_effector_frame,
-                stamp=self.node.get_clock().now().to_msg()),
-            id=objName,
-            primitive_poses=primitivePoses,
-            primitives=primitives,
-            subframe_names=objName,
-            subframe_poses=primitivePoses,
-            operation=CollisionObject.ADD)
-
-        attached_object = AttachedCollisionObject(
-            link_name=self.end_effector_frame,
-            object=collision_object
-        )
-
-        self.objList.append(attached_object)
-        return index
-
-    async def attachObjectToEE(self, objName: str):
-        # Obtain collision object
-        index = self.objListIndex.index(objName)
-        attached_object = self.objList[index]
-
-        # Update Collision object
-        attached_object.object.header.stamp = self.node.get_clock().now().to_msg()
-
-        # Publish Collision Object
-        planning_scene = PlanningScene(
-            is_diff=True,
-        )
-        planning_scene.robot_state = self.current_state_to_robot_state()
-        planning_scene.robot_state.attached_collision_objects.append(
-            attached_object)
-        
-        # self.planning_scene_publisher.publish(planning_scene)
-        request = ApplyPlanningScene.Request(scene=planning_scene)
-        result = await self.apply_planning.call_async(request)
-
-        return result.success
-
-        return index
-
-    def removeObjectFromEE(self, objName: str):
-        # Obtain collision object
-        index = self.objListIndex.index(objName)
-        attached_object = self.objList[index]
-
-        # Update Collision object
-        attached_object.object.operation = CollisionObject.REMOVE
-        attached_object.object.header.stamp = self.node.get_clock().now().to_msg()
-
-        # Publish Collision Object
-        planning_scene = PlanningScene(
-            is_diff=True,
-        )
-        planning_scene.robot_state.attached_collision_objects.append(
-            attached_object)
-        self.planning_scene_publisher.publish(planning_scene)
-
-        return index
