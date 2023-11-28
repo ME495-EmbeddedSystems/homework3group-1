@@ -17,9 +17,10 @@ from moveit_msgs.msg import (
     JointConstraint,
     PlanningScene,
     CollisionObject,
+    AttachedCollisionObject,
 )
 
-from moveit_msgs.srv import GetPositionIK, GetCartesianPath
+from moveit_msgs.srv import GetPositionIK, GetCartesianPath, ApplyPlanningScene
 from tf2_ros import Buffer
 from tf2_ros.transform_listener import TransformListener
 import rclpy
@@ -30,6 +31,7 @@ from geometry_msgs.msg import (
     Point,
     Quaternion,
     Vector3,
+    TransformStamped,
 )
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Header
@@ -65,7 +67,8 @@ class MoveItApi():
                  base_frame: str,
                  end_effector_frame: str,
                  group_name: str,
-                 joint_state_topic: str):
+                 joint_state_topic: str,
+                 robot_model_name: str = ""):
         """
         Initialize a wrapper for moveit.
 
@@ -80,9 +83,12 @@ class MoveItApi():
             end_effector_frame (str) -- the frame of the end effector
             group_name (str) -- the name of the planning group to use
             joint_state_topic (str) -- the topic to subscribe to for joint states
+            robot_model_name (str) -- the name of the robot, only needed for attaching\
+                                      objects to the end effector
 
         """
         self.node = node
+        self.robot_model_name = robot_model_name
 
         # Create MoveGroup.action client
         self.move_group_action_client = ActionClient(
@@ -97,6 +103,8 @@ class MoveItApi():
             GetPositionIK, "compute_ik", callback_group=self.cbgroup)
         self.cartesian_client = self.node.create_client(
             GetCartesianPath, "compute_cartesian_path", callback_group=self.cbgroup)
+        self.apply_planning = self.node.create_client(
+            ApplyPlanningScene, "apply_planning_scene", callback_group=self.cbgroup)
 
         # Create ExecuteTrajectory.action client
         self.execute_trajectory_action_client = ActionClient(
@@ -635,7 +643,6 @@ class MoveItApi():
             is_diff=True,
         )
         planning_scene.world.collision_objects.append(collision_object)
-
         self.planning_scene_publisher.publish(planning_scene)
 
     async def create_cartesian_path(self,
@@ -643,7 +650,7 @@ class MoveItApi():
                                     start_state: RobotState = None,
                                     max_velocity_scaling_factor: float = 0.1,
                                     max_acceleration_scaling_factor: float = 0.1,
-                                    orienation_constraint=None) -> PlanResult:
+                                    orienation_constraint: Quaternion = None) -> PlanResult:
         """
         Construct a robot trajectory given a list of waypoints
 
@@ -654,9 +661,10 @@ class MoveItApi():
             start_state (moveit_msgs/RobotState) -- Start state of the trajectory (default: {None})
             max_velocity_scaling_factor (float) -- Velocity Scaling factor (default: {0.1})
             max_acceleration_scaling_factor (float) -- Acceleration Scaling factor (default: {0.1})
-            orientation_cosntraint (geometry_msgs/Quaternion) -- Orientation to constrain the ee
+            orientation_constraint (goemetry_msgs/Quaternion) -- Orientation to constrain the ee
 
-        Returns:
+        Returns
+        -------
             A trajectory of the planned path or the executed path
 
         """
