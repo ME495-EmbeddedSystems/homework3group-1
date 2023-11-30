@@ -95,4 +95,18 @@ def linearly_interpolate_position(pose1: Pose, pose2: Pose, n: int) -> List[Pose
         ))
     poses.append(pose2)
 
+    # overshoot for pose 2
+    xdiff = (pose1.position.x - pose2.position.x)/10
+    ydiff = (pose1.position.y - pose2.position.y)/10
+    zdiff = (pose1.position.z - pose2.position.z)/10
+
+    overshoot = Pose(
+        position=Point(
+            x=pose2.position.x - xdiff,
+            y=pose2.position.y - ydiff,
+            z=pose2.position.z - zdiff
+        ),
+        orientation=pose2.orientation
+    )
+
     return poses
