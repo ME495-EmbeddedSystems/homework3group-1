@@ -42,13 +42,18 @@ class GraspPlanner:
     async def execute_grasp_plan(self, grasp_plan: GraspPlan):
 
         self.node.get_logger().warn("going to approach point!")
+        curr_poseStamped = await self.moveit_api.get_end_effector_pose()
+        curr_pose = curr_poseStamped.pose
+
+        waypoints = linearly_interpolate_position(curr_pose, grasp_plan.approach_pose)
         self.node.get_logger().warn(
             f"grasp pose: {grasp_plan.approach_pose.orientation}")
-        plan_result = await self.moveit_api.plan_async(
-            point=grasp_plan.approach_pose.position,
-            orientation=grasp_plan.approach_pose.orientation,
-            execute=True
-        )
+        await self.moveit_api.create_cartesian_path(waypoints)
+        # plan_result = await self.moveit_api.plan_async(
+        #     point=grasp_plan.approach_pose.position,
+        #     orientation=grasp_plan.approach_pose.orientation,
+        #     execute=True
+        # )
 
         self.node.get_logger().warn(f"succeeded in going to approach point")
 
@@ -78,7 +83,7 @@ def linearly_interpolate_position(pose1: Pose, pose2: Pose, n: int) -> List[Pose
     y_space = np.linspace(pose1.position.y, pose2.position.y, n)
     z_space = np.linspace(pose1.position.z, pose2.position.z, n)
 
-    poses = []
+    poses = [pose1]
     for x, y, z in zip(x_space, y_space, z_space):
         poses.append(Pose(
             position=Point(
@@ -88,5 +93,6 @@ def linearly_interpolate_position(pose1: Pose, pose2: Pose, n: int) -> List[Pose
             ),
             orientation=pose1.orientation
         ))
+    poses.append(pose2)
 
     return poses
