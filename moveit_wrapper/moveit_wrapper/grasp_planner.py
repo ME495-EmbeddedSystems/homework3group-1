@@ -7,6 +7,7 @@ from rclpy.action import ActionClient
 from typing import List
 import numpy as np
 from rclpy.callback_groups import ReentrantCallbackGroup
+from tf2_ros import TransformListener, Buffer, TransformBroadcaster
 
 
 class GraspPlan:
@@ -38,6 +39,12 @@ class GraspPlanner:
             gripper_action_name,
             callback_group=ReentrantCallbackGroup(),
         )
+
+        # Create tf listener
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.tf_parent_frame = "panda_link0"
+
 
     async def execute_grasp_plan(self, grasp_plan: GraspPlan):
 
@@ -76,6 +83,11 @@ class GraspPlanner:
             orientation=grasp_plan.retreat_pose.orientation,
             execute=True
         )
+
+        actual_grasp_position = self.buffer.lookup_transform(
+            "panda_link0", "panda_hand_tcp", Time())
+
+        return actual_grasp_position
 
 
 def linearly_interpolate_position(pose1: Pose, pose2: Pose, n: int) -> List[Pose]:
