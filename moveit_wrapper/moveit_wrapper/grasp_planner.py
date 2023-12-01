@@ -8,6 +8,7 @@ from typing import List
 import numpy as np
 from rclpy.callback_groups import ReentrantCallbackGroup
 from tf2_ros import TransformListener, Buffer, TransformBroadcaster
+from rclpy.time import Time
 
 
 class GraspPlan:
@@ -41,8 +42,8 @@ class GraspPlanner:
         )
 
         # Create tf listener
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.buffer = Buffer()
+        self.tf_listener = TransformListener(self.buffer, self.node)
         self.tf_parent_frame = "panda_link0"
 
 
@@ -52,15 +53,11 @@ class GraspPlanner:
         curr_poseStamped = await self.moveit_api.get_end_effector_pose()
         curr_pose = curr_poseStamped.pose
 
-        waypoints = linearly_interpolate_position(curr_pose, grasp_plan.approach_pose)
-        self.node.get_logger().warn(
-            f"grasp pose: {grasp_plan.approach_pose.orientation}")
-        await self.moveit_api.create_cartesian_path(waypoints)
-        # plan_result = await self.moveit_api.plan_async(
-        #     point=grasp_plan.approach_pose.position,
-        #     orientation=grasp_plan.approach_pose.orientation,
-        #     execute=True
-        # )
+        plan_result = await self.moveit_api.plan_async(
+            point=grasp_plan.approach_pose.position,
+            orientation=grasp_plan.approach_pose.orientation,
+            execute=True
+        )
 
         self.node.get_logger().warn(f"succeeded in going to approach point")
 
@@ -88,37 +85,3 @@ class GraspPlanner:
         )
 
         return actual_grasp_position
-
-
-def linearly_interpolate_position(pose1: Pose, pose2: Pose, n: int) -> List[Pose]:
-    x_space = np.linspace(pose1.position.x, pose2.position.x, n)
-    y_space = np.linspace(pose1.position.y, pose2.position.y, n)
-    z_space = np.linspace(pose1.position.z, pose2.position.z, n)
-
-    poses = [pose1]
-    for x, y, z in zip(x_space, y_space, z_space):
-        poses.append(Pose(
-            position=Point(
-                x=x,
-                y=y,
-                z=z
-            ),
-            orientation=pose1.orientation
-        ))
-    poses.append(pose2)
-
-    # overshoot for pose 2
-    xdiff = (pose1.position.x - pose2.position.x)/10
-    ydiff = (pose1.position.y - pose2.position.y)/10
-    zdiff = (pose1.position.z - pose2.position.z)/10
-
-    overshoot = Pose(
-        position=Point(
-            x=pose2.position.x - xdiff,
-            y=pose2.position.y - ydiff,
-            z=pose2.position.z - zdiff
-        ),
-        orientation=pose2.orientation
-    )
-
-    return poses
