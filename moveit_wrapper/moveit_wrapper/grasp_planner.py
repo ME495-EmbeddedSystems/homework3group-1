@@ -78,14 +78,14 @@ class GraspPlanner:
         grasp_command_result = await goal_handle.get_result_async()
         self.node.get_logger().warn("finished grasp")
 
+        actual_grasp_position = self.buffer.lookup_transform(
+            "panda_link0", "panda_hand_tcp", Time())
+
         plan_result = await self.moveit_api.plan_async(
             point=grasp_plan.retreat_pose.position,
             orientation=grasp_plan.retreat_pose.orientation,
             execute=True
         )
-
-        actual_grasp_position = self.buffer.lookup_transform(
-            "panda_link0", "panda_hand_tcp", Time())
 
         return actual_grasp_position
 
